@@ -1,0 +1,38 @@
+# Root .gitignore para projeto Django + Next.js
+
+# --- Comuns / OS / Editores ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# --- Variáveis de ambiente ---
+.env
+.env.*
+
+# --- Backend (Django) ---
+api/.venv/
+api/__pycache__/
+api/**/*.pyc
+api/**/*.pyo
+api/**/*.pyd
+api/.pytest_cache/
+api/db.sqlite3
+api/media/
+
+# --- Frontend (Next.js) ---
+web/node_modules/
+web/.next/
+web/out/
+web/.turbo/
+web/coverage/
+web/*.tsbuildinfo
+web/.vercel/
+web/.pnp
+web/.pnp.*
+
+# --- Docker / Artefatos de build ---
+*.tar
+*.gz
+*.zip
