@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
-from .models import Category, Product, ProductImage, SiteSetting, CustomerProfile, CustomerAddress
+from .models import Category, Product, ProductImage, SiteSetting, CustomerProfile, CustomerAddress, Order, OrderStatus
 from .serializers import (
     CategorySerializer,
     ProductSerializer,
@@ -13,6 +13,10 @@ from .serializers import (
     SiteSettingSerializer,
     CustomerProfileSerializer,
     CustomerAddressSerializer,
+    OrderSerializer,
+    AdminOrderSerializer,
+    OrderStatusSerializer,
+    AdminCustomerSerializer,
 )
 from .permissions import IsStaffOrReadOnly
 
@@ -162,3 +166,64 @@ class AddressDetailView(generics.RetrieveUpdateDestroyAPIView):
         addr = serializer.save()
         if addr.is_default_delivery:
             CustomerAddress.objects.filter(user=self.request.user).exclude(id=addr.id).update(is_default_delivery=False)
+
+
+class OrderListCreateView(generics.ListCreateAPIView):
+    serializer_class = OrderSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Order.objects.filter(user=self.request.user).order_by('-created_at').prefetch_related('items')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class OrderViewSet(viewsets.ModelViewSet):
+    queryset = Order.objects.all().order_by('-created_at')
+    serializer_class = AdminOrderSerializer
+    permission_classes = [IsStaffOrReadOnly]
+
+
+class AdminOrderByNumberView(generics.RetrieveAPIView):
+    queryset = Order.objects.all()
+    serializer_class = AdminOrderSerializer
+    permission_classes = [IsStaffOrReadOnly]
+    lookup_field = 'order_number'
+
+
+class OrderStatusViewSet(viewsets.ModelViewSet):
+    queryset = OrderStatus.objects.all().order_by('sort_order', 'label')
+    serializer_class = OrderStatusSerializer
+    permission_classes = [IsStaffOrReadOnly]
+
+
+class AdminCustomerView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsStaffOrReadOnly]
+    serializer_class = AdminCustomerSerializer
+
+    def get_object(self):
+        User = get_user_model()
+        pk = self.kwargs.get('pk')
+        user = User.objects.filter(pk=pk).first()
+        return user
+
+
+class AdminCustomerListView(generics.ListAPIView):
+    permission_classes = [IsStaffOrReadOnly]
+    serializer_class = AdminCustomerSerializer
+
+    def get_queryset(self):
+        User = get_user_model()
+        q = self.request.query_params.get('q')
+        qs = User.objects.all().order_by('id')
+        # Exibir apenas clientes (não staff)
+        qs = qs.filter(is_staff=False)
+        if q:
+            qs = qs.filter(
+                Q(username__icontains=q) |
+                Q(email__icontains=q) |
+                Q(first_name__icontains=q) |
+                Q(last_name__icontains=q)
+            )
+        return qs

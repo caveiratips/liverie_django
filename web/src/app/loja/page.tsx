@@ -21,6 +21,18 @@ type Product = {
   images?: ProductImage[];
 };
 
+type OrderItemDTO = { id: number; title: string; image_url?: string; unit_price: number; quantity: number };
+type OrderDTO = {
+  id: number;
+  order_number: string;
+  status: "pending" | "paid" | "separation" | "shipped" | "delivered";
+  total: number;
+  payment_method?: string;
+  shipping_method?: string;
+  created_at: string;
+  items: OrderItemDTO[];
+};
+
 function currencyBRL(n: any): string {
   const num = Number(n || 0);
   return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -47,6 +59,7 @@ export default function LojaPage() {
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   type CartItem = { productId: number; title: string; price: number; image?: string; qty: number };
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [orders, setOrders] = useState<OrderDTO[]>([]);
 
   useEffect(() => {
     fetch("/api/categories")
@@ -69,6 +82,28 @@ export default function LojaPage() {
       .then((d) => setSession(d))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!session?.logged_in) return;
+    fetch("/api/orders", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => {
+        if (Array.isArray(d)) setOrders(d);
+      })
+      .catch(() => {});
+  }, [session?.logged_in]);
+
+  useEffect(() => {
+    function refreshOrders() {
+      if (!session?.logged_in) return;
+      fetch("/api/orders", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : []))
+        .then((d) => { if (Array.isArray(d)) setOrders(d); })
+        .catch(() => {});
+    }
+    window.addEventListener('orders-updated', refreshOrders as any);
+    return () => window.removeEventListener('orders-updated', refreshOrders as any);
+  }, [session?.logged_in]);
 
   // Abrir sacola automaticamente vindo da página de produto
   useEffect(() => {
@@ -170,6 +205,51 @@ export default function LojaPage() {
           <ProductGrid products={filtered} onAdd={onAddToCart} onBuy={buyNow} />
         )}
       </section>
+      {session?.logged_in && (
+        <section className="mx-auto max-w-6xl px-4 pb-12">
+          <h2 className="mb-4 text-xl font-semibold text-primary">Meus pedidos</h2>
+          {orders.length === 0 ? (
+            <div className="text-sm text-zinc-600">Você ainda não tem pedidos.</div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {orders.map((o) => (
+                <div key={o.id} className="rounded-lg border bg-card p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">Pedido {o.order_number}</div>
+                    <span className="text-xs rounded-full bg-muted px-2 py-1 capitalize">
+                      {({
+                        pending: "pendente",
+                        paid: "pago",
+                        separation: "em separação",
+                        shipped: "enviado",
+                        delivered: "entregue",
+                      } as any)[o.status] || o.status}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-xs text-zinc-600">
+                    {new Date(o.created_at).toLocaleString("pt-BR")}
+                  </div>
+                  <ul className="mt-3 space-y-2 text-sm">
+                    {o.items.slice(0, 3).map((it) => (
+                      <li key={it.id} className="flex items-center justify-between">
+                        <span className="truncate">{it.title} × {it.quantity}</span>
+                        <span>{currencyBRL(it.unit_price * it.quantity)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {o.items.length > 3 && (
+                    <div className="mt-1 text-xs text-zinc-500">+{o.items.length - 3} itens</div>
+                  )}
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="text-sm">Total</span>
+                    <span className="text-sm font-semibold text-primary">{currencyBRL(o.total)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
       <Footer />
 
       {showLogin && (
@@ -209,8 +289,10 @@ function getImageUrl(u?: string | null): string | undefined {
   if (!u) return undefined;
   const url = String(u);
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  if (url.startsWith("/api/media/")) return url;
-  if (url.startsWith("/media/")) return `/api/media${url.replace('/media', '')}`;
+  if (typeof window !== "undefined") {
+    if (url.startsWith("/api/media/")) return `${window.location.origin}${url}`;
+    if (url.startsWith("/media/")) return `${window.location.origin}/api/media${url.replace('/media', '')}`;
+  }
   return url;
 }
 
@@ -530,6 +612,7 @@ function LoginModal({ onClose, onOpenCadastro, onLoggedIn }: { onClose: () => vo
 }
 
 function CartModal({ items, setItems, startStep, onClose, session }: { items: { productId: number; title: string; price: number; image?: string; qty: number }[]; setItems: (fn: (prev: any) => any) => void; startStep?: 0 | 1 | 2 | 3 | 4 | 5; onClose: () => void; session: { logged_in: boolean; username: string | null; name: string | null; address?: { cep: string; endereco: string; numero: string; complemento?: string; bairro: string; cidade: string; estado: string } | null; addresses?: { id: number; label?: string; cep: string; endereco: string; numero: string; complemento?: string; bairro: string; cidade: string; estado: string; is_default_delivery?: boolean }[]; defaultDeliveryAddressId?: number | null } | null }) {
+  const steps = ["Login", "Sacola", "Endereço", "Frete", "Pagamento", "Finalizar"] as const;
   const [step, setStep] = useState<0 | 1 | 2 | 3 | 4 | 5>(startStep ?? (session?.logged_in ? 1 : 0));
   const [loggedIn, setLoggedIn] = useState<boolean>(!!session?.logged_in);
   const total = items.reduce((sum, it) => sum + it.price * it.qty, 0);
@@ -546,6 +629,7 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
   // Gestão de endereços (lista + novo)
   const [addresses, setAddresses] = useState<any[]>(Array.isArray(session?.addresses) ? (session?.addresses as any[]) : []);
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(session?.defaultDeliveryAddressId ?? null);
+  const [showNewAddressForm, setShowNewAddressForm] = useState<boolean>(!(Array.isArray(session?.addresses) && session?.addresses.length > 0));
   const [address, setAddress] = useState({ cep: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", estado: "" });
   const [cepLoading, setCepLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -592,6 +676,32 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
       .catch(() => {});
   }, [loggedIn]);
 
+  // Após carregar endereços, pré-seleciona o padrão ou o primeiro e controla exibição do formulário de novo endereço
+  useEffect(() => {
+    if (selectedAddressId == null && Array.isArray(addresses) && addresses.length > 0) {
+      const def = addresses.find((a: any) => !!a.is_default_delivery)?.id ?? addresses[0]?.id ?? null;
+      if (def != null) setSelectedAddressId(Number(def));
+    }
+    setShowNewAddressForm(!(Array.isArray(addresses) && addresses.length > 0));
+  }, [addresses]);
+
+  // Persistir e restaurar progresso do checkout
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("checkout_step");
+      if (saved !== null) {
+        const s = Number(saved);
+        if (s >= 0 && s <= 5) setStep(s as 0 | 1 | 2 | 3 | 4 | 5);
+      } else if (startStep !== undefined) {
+        setStep(startStep);
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem("checkout_step", String(step)); } catch {}
+  }, [step]);
+
   // Login embutido (passo 0)
   const [loginUser, setLoginUser] = useState("");
   const [loginPass, setLoginPass] = useState("");
@@ -637,31 +747,78 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
       if (created && created.id) {
         setAddresses((prev: any[]) => [created, ...prev]);
         setSelectedAddressId(Number(created.id));
+        // Permanecer no passo de Endereço para o usuário ver e escolher
+        setShowNewAddressForm(false);
       }
-      setStep(3);
     } else {
       const d = await res.json().catch(() => ({}));
       setError(d?.detail || "Falha ao salvar endereço");
     }
   }
+  // Frete e Pagamento
+  const [shippingMethod, setShippingMethod] = useState<{ key: string; label: string; eta: string; price: number }>({ key: "gratis", label: "Grátis", eta: "5-7 dias", price: 0 });
+  const shippingOptions: { key: string; label: string; eta: string; price: number }[] = [
+    { key: "gratis", label: "Grátis", eta: "5-7 dias", price: 0 },
+    { key: "expresso", label: "Expresso", eta: "2-3 dias", price: 25.9 },
+  ];
+  const [paymentMethod, setPaymentMethod] = useState<"pix" | "cartao" | "boleto">("pix");
+  const [card, setCard] = useState({ nome: "", numero: "", validade: "", cvv: "" });
+  const [boletoCpf, setBoletoCpf] = useState<string>("");
+  const [orderConfirmed, setOrderConfirmed] = useState<boolean>(false);
 
   async function finalizeOrder() {
     setError(null);
-    // Obter endereço selecionado ou o preenchido
     const selected = addresses.find((a: any) => a.id === selectedAddressId) || address;
-    // Se não houver na lista, validar o preenchido básico
     if (!("id" in (selected as any))) {
       const required = ["cep", "endereco", "numero", "bairro", "cidade", "estado"] as const;
       for (const k of required) {
         if (!(selected as any)[k]) { setError(`Campo obrigatório: ${k}`); return; }
       }
     }
-    const payload = { items, address: selected, shipping: { method: "gratis", price: 0 }, total, method: "pix" };
+    if (paymentMethod === "cartao") {
+      const cleanNum = onlyDigits(card.numero || "");
+      if (!card.nome || cleanNum.length < 13 || !card.validade || onlyDigits(card.cvv || "").length < 3) {
+        setError("Preencha os dados do cartão corretamente");
+        return;
+      }
+    }
+    if (paymentMethod === "boleto") {
+      if (onlyDigits(boletoCpf || "").length !== 11) {
+        setError("Informe um CPF válido para boleto");
+        return;
+      }
+    }
+    const payload = {
+      items: items.map((it) => ({
+        product_id: it.productId,
+        title: it.title,
+        image_url: it.image,
+        unit_price: it.price,
+        quantity: it.qty,
+      })),
+      delivery_address_id: (selected as any)?.id,
+      shipping_method: shippingMethod.key,
+      payment_method: paymentMethod,
+    } as any;
     const res = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const d = await res.json().catch(() => ({}));
     if (res.ok) {
-      setStep(5);
+      setOrderConfirmed(true);
+      // Limpar carrinho e atualizar lista de pedidos
+      try {
+        localStorage.removeItem("cart_items");
+      } catch {}
+      setItems([]);
+      try {
+        const r = await fetch("/api/orders", { cache: "no-store" });
+        const list = await r.json().catch(() => ([]));
+        if (Array.isArray(list)) {
+          // Atualiza na página principal também
+          // @ts-ignore
+          window.dispatchEvent(new CustomEvent('orders-updated'));
+        }
+      } catch {}
     } else {
-      const d = await res.json().catch(() => ({}));
       setError(d?.detail || "Falha ao finalizar pedido");
     }
   }
@@ -670,202 +827,375 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
     <Modal open={true} onClose={onClose}>
       <div className="mx-auto max-w-2xl">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Sua sacola</h2>
+          <h2 className="text-lg font-semibold">Checkout</h2>
           <div className="flex items-center gap-2 text-rose-600">
             <Heart size={18} />
             <span className="text-xs">Um toque de carinho para você</span>
           </div>
         </div>
-        <div className="mt-4 flex gap-3 text-xs">
-          <button className={`rounded px-3 py-1 ${step === 0 ? "bg-rose-200 text-rose-900" : "bg-muted"}`} onClick={() => setStep(0)}>Login</button>
-          <button className={`rounded px-3 py-1 ${step === 1 ? "bg-rose-200 text-rose-900" : "bg-muted"}`} onClick={() => setStep(1)}>Sacola</button>
-          <button className={`rounded px-3 py-1 ${step === 2 ? "bg-rose-200 text-rose-900" : "bg-muted"}`} onClick={() => setStep(2)}>Endereço</button>
-          <button className={`rounded px-3 py-1 ${step === 3 ? "bg-rose-200 text-rose-900" : "bg-muted"}`} onClick={() => setStep(3)}>Frete</button>
-          <button className={`rounded px-3 py-1 ${step === 4 ? "bg-rose-200 text-rose-900" : "bg-muted"}`} onClick={() => setStep(4)}>Pagamento</button>
-          <button className={`rounded px-3 py-1 ${step === 5 ? "bg-rose-200 text-rose-900" : "bg-muted"}`} onClick={() => setStep(5)}>Finalizar</button>
-        </div>
-
-        {step === 0 && (
-          <div className="mt-4">
-            {loggedIn ? (
-              <div className="rounded border bg-green-50 p-3 text-sm text-green-700">Você já está autenticado.</div>
-            ) : (
-              <form onSubmit={onLoginSubmit} className="mx-auto max-w-md grid gap-3">
-                <div>
-                  <label className="mb-1 block text-sm">Email</label>
-                  <Input type="email" value={loginUser} onChange={(e) => setLoginUser(e.target.value)} placeholder="voce@exemplo.com" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm">Senha</label>
-                  <Input type="password" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} placeholder="••••••••" />
-                </div>
-                {loginError && <p className="text-xs text-red-600">{loginError}</p>}
-                <div className="flex justify-end">
-                  <Button className="bg-primary text-black" type="submit" disabled={loginLoading}>
-                    {loginLoading ? "Entrando..." : (
-                      <span className="inline-flex items-center gap-1.5"><LogIn size={16} /> Entrar</span>
-                    )}
-                  </Button>
-                </div>
-              </form>
-            )}
-            <div className="mt-4 flex justify-between">
-              <button onClick={() => setStep(1)} className="text-xs hover:text-primary">Ir para sacola</button>
-              <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(2)} disabled={!loggedIn}>Ir para endereço</Button>
-            </div>
-          </div>
-        )}
-
-        {step === 1 && (
-          <div className="mt-4 space-y-3">
-            {items.length === 0 && <p className="text-sm text-zinc-600">Sua sacola está vazia.</p>}
-            {items.map((it) => (
-              <div key={it.productId} className="flex items-center gap-3 rounded border p-3">
-                <div className="h-14 w-14 rounded bg-muted" style={{ backgroundImage: it.image ? `url(${it.image})` : undefined, backgroundSize: "cover" }} />
-                <div className="flex-1">
-                  <div className="text-sm font-medium">{it.title}</div>
-                  <div className="text-xs text-zinc-600">{currencyBRL(it.price)}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => dec(it.productId)} className="rounded border px-2 py-1 text-xs">-</button>
-                  <span className="text-xs">{it.qty}</span>
-                  <button onClick={() => inc(it.productId)} className="rounded border px-2 py-1 text-xs">+</button>
-                </div>
-                <button onClick={() => remove(it.productId)} className="text-xs text-red-600 hover:underline">Remover</button>
+        {/* Indicador de progresso */}
+        <div className="mt-4">
+          <div className="flex items-center gap-2 text-xs">
+            {steps.map((label, idx) => (
+              <div key={label} className="flex items-center gap-2">
+                <button
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 ${idx <= step ? "bg-rose-200 text-rose-900" : "bg-muted text-zinc-600"}`}
+                  onClick={() => setStep(idx as 0 | 1 | 2 | 3 | 4 | 5)}
+                >
+                  <span className="font-medium">{idx + 1}</span>
+                  <span>{label}</span>
+                </button>
+                {idx < steps.length - 1 && <span className={`h-px w-8 ${idx < step ? "bg-rose-300" : "bg-muted"}`} />}
               </div>
             ))}
-            <div className="flex items-center justify-between rounded bg-rose-50 px-3 py-2 text-sm">
-              <span>Total</span>
-              <span className="font-semibold text-rose-600">{currencyBRL(total)}</span>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(2)} disabled={items.length === 0 || !loggedIn}>Continuar</Button>
-            </div>
           </div>
-        )}
+        </div>
 
-        {step === 2 && (
-          <div className="mt-4 space-y-3">
-            {Array.isArray(addresses) && addresses.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Selecione um endereço de entrega</div>
-                <div className="space-y-2">
-                  {addresses.map((a: any) => (
-                    <div key={a.id} className="flex items-center gap-2 rounded border p-2 text-xs">
-                      <input type="radio" name="selectedAddress" checked={selectedAddressId === a.id} onChange={() => setSelectedAddressId(a.id)} />
-                      <span>{a.label || "Entrega"} • {a.endereco}, {a.numero} — {a.bairro}, {a.cidade}/{a.estado} • CEP {formatCEP(a.cep)}</span>
-                      {a.is_default_delivery && <span className="ml-auto rounded bg-primary/20 px-2 py-0.5 text-[10px] text-primary">Padrão</span>}
-                      {!a.is_default_delivery && (
-                        <button
-                          type="button"
-                          className="ml-auto rounded border px-2 py-0.5 hover:bg-muted"
-                          onClick={async () => {
-                            try {
-                              const res = await fetch(`/api/addresses/${a.id}`, {
-                                method: "PATCH",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ is_default_delivery: true }),
-                              });
-                              if (res.ok) {
-                                setAddresses((prev: any[]) => prev.map((x) => ({ ...x, is_default_delivery: x.id === a.id })));
-                              }
-                            } catch {}
-                          }}
-                        >
-                          Definir padrão
-                        </button>
-                      )}
+        {/* Container deslizante das etapas */}
+        <div className="mt-4 overflow-hidden">
+          <div className="flex w-[600%] transition-transform duration-300 ease-in-out" style={{ transform: `translateX(-${(step * 100) / steps.length}%)` }}>
+            {/* Login */}
+            <div className="w-1/6 px-1">
+              {step === 0 && (
+                <div>
+                  {loggedIn ? (
+                    <div className="rounded border bg-green-50 p-3 text-sm text-green-700">Você já está autenticado.</div>
+                  ) : (
+                    <form onSubmit={onLoginSubmit} className="mx-auto max-w-md grid gap-3">
+                      <div>
+                        <label className="mb-1 block text-sm">Email</label>
+                        <Input type="email" value={loginUser} onChange={(e) => setLoginUser(e.target.value)} placeholder="voce@exemplo.com" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm">Senha</label>
+                        <Input type="password" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} placeholder="••••••••" />
+                      </div>
+                      {loginError && <p className="text-xs text-red-600">{loginError}</p>}
+                      <div className="flex justify-end">
+                        <Button className="bg-primary text-black" type="submit" disabled={loginLoading}>
+                          {loginLoading ? "Entrando..." : (
+                            <span className="inline-flex items-center gap-1.5"><LogIn size={16} /> Entrar</span>
+                          )}
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                  <div className="mt-4 flex justify-between">
+                    <button onClick={() => setStep(1)} className="text-xs hover:text-primary">Ir para sacola</button>
+                    <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(2)} disabled={!loggedIn}>Ir para endereço</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Sacola */}
+            <div className="w-1/6 px-1">
+              {step === 1 && (
+                <div className="space-y-3">
+                  {items.length === 0 && <p className="text-sm text-zinc-600">Sua sacola está vazia.</p>}
+                  {items.map((it) => (
+                    <div key={it.productId} className="flex items-center gap-3 rounded border p-3">
+                      <div className="h-14 w-14 rounded bg-muted" style={{ backgroundImage: it.image ? `url(${it.image})` : undefined, backgroundSize: "cover" }} />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium">{it.title}</div>
+                        <div className="text-xs text-zinc-600">{currencyBRL(it.price)}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => dec(it.productId)} className="rounded border px-2 py-1 text-xs">-</button>
+                        <span className="text-xs">{it.qty}</span>
+                        <button onClick={() => inc(it.productId)} className="rounded border px-2 py-1 text-xs">+</button>
+                      </div>
+                      <button onClick={() => remove(it.productId)} className="text-xs text-red-600 hover:underline">Remover</button>
                     </div>
                   ))}
+                  <div className="flex items-center justify-between rounded bg-rose-50 px-3 py-2 text-sm">
+                    <span>Total</span>
+                    <span className="font-semibold text-rose-600">{currencyBRL(total)}</span>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(2)} disabled={items.length === 0 || !loggedIn}>Continuar</Button>
+                  </div>
                 </div>
-              </div>
-            )}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="sm:col-span-1">
-                <label className="mb-1 block text-sm">CEP</label>
-                <Input value={address.cep} onChange={(e) => setAddress({ ...address, cep: formatCEP(e.target.value) })} onBlur={lookupCEP} placeholder="00000-000" />
-                {cepLoading && <p className="mt-1 text-xs text-zinc-600">Buscando endereço...</p>}
-              </div>
-              <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm">Endereço</label>
-                <Input value={address.endereco} onChange={(e) => setAddress({ ...address, endereco: e.target.value })} placeholder="Rua Exemplo" />
-              </div>
+              )}
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-              <div>
-                <label className="mb-1 block text-sm">Número</label>
-                <Input value={address.numero} onChange={(e) => setAddress({ ...address, numero: e.target.value })} placeholder="123" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm">Complemento</label>
-                <Input value={address.complemento} onChange={(e) => setAddress({ ...address, complemento: e.target.value })} placeholder="Apto, bloco, etc." />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm">Bairro</label>
-                <Input value={address.bairro} onChange={(e) => setAddress({ ...address, bairro: e.target.value })} placeholder="Centro" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm">Cidade</label>
-                <Input value={address.cidade} onChange={(e) => setAddress({ ...address, cidade: e.target.value })} placeholder="São Paulo" />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-              <div>
-                <label className="mb-1 block text-sm">Estado (UF)</label>
-                <Input value={address.estado} onChange={(e) => setAddress({ ...address, estado: e.target.value.toUpperCase() })} placeholder="SP" />
-              </div>
-            </div>
-            {error && <p className="text-xs text-red-600">{error}</p>}
-            <div className="flex justify-between">
-              <button onClick={() => setStep(1)} className="text-xs hover:text-primary">Voltar para sacola</button>
-              <div className="flex gap-2">
-                <Button variant={"outline" as any} className="border-rose-200 text-rose-900" onClick={() => createAddress()}>Salvar endereço</Button>
-                <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(3)} disabled={!loggedIn}>Ir para frete</Button>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {step === 3 && (
-          <div className="mt-4 space-y-3">
-            <div className="rounded border bg-primary/10 p-3 text-sm">
-              <div className="font-semibold">Frete</div>
-              <div className="text-zinc-700">Frete grátis para esta compra.</div>
+            {/* Endereço */}
+            <div className="w-1/6 px-1">
+              {step === 2 && (
+                <div className="space-y-3">
+                  {Array.isArray(addresses) && addresses.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium">Selecione um endereço de entrega</div>
+                      <div className="space-y-2">
+                         {addresses.map((a: any) => (
+                           <div key={a.id} className="flex items-center gap-2 rounded border p-2 text-xs">
+                             <input
+                               type="checkbox"
+                               checked={selectedAddressId === a.id}
+                               onChange={(e) => setSelectedAddressId(e.target.checked ? a.id : null)}
+                             />
+                             <span>{a.label || "Entrega"} • {a.endereco}, {a.numero} — {a.bairro}, {a.cidade}/{a.estado} • CEP {formatCEP(a.cep)}</span>
+                             {a.is_default_delivery && <span className="ml-auto rounded bg-primary/20 px-2 py-0.5 text-[10px] text-primary">Padrão</span>}
+                             <label className="ml-auto flex items-center gap-1">
+                               <input
+                                 type="checkbox"
+                                 checked={!!a.is_default_delivery}
+                                 onChange={async (e) => {
+                                   try {
+                                     const res = await fetch(`/api/addresses/${a.id}`, {
+                                       method: "PATCH",
+                                       headers: { "Content-Type": "application/json" },
+                                       body: JSON.stringify({ is_default_delivery: e.target.checked }),
+                                     });
+                                     if (res.ok) {
+                                       const checked = e.target.checked;
+                                       setAddresses((prev: any[]) => prev.map((x) => ({ ...x, is_default_delivery: x.id === a.id ? checked : false })));
+                                       if (checked) setSelectedAddressId(a.id);
+                                     }
+                                   } catch {}
+                                 }}
+                               />
+                               <span className="text-[10px]">Principal</span>
+                             </label>
+                           </div>
+                         ))}
+                      </div>
+                      {Array.isArray(addresses) && addresses.length > 0 && !selectedAddressId && (
+                        <p className="text-xs text-zinc-600">Selecione um endereço para continuar.</p>
+                      )}
+                      <div className="flex justify-between">
+                        <button onClick={() => setShowNewAddressForm((v) => !v)} className="text-xs hover:text-primary">
+                          {showNewAddressForm ? "Cancelar novo endereço" : "Cadastrar novo endereço"}
+                        </button>
+                        <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(3)} disabled={!loggedIn || !selectedAddressId}>Usar este endereço</Button>
+                      </div>
+                    </div>
+                  )}
+                  {showNewAddressForm && (
+                  <>
+                    {session?.address && (
+                      <div className="mb-2">
+                        <button type="button" className="text-xs text-primary hover:underline" onClick={() => createAddress("Cadastro")}>Usar endereço do cadastro</button>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div className="sm:col-span-1">
+                        <label className="mb-1 block text-sm">CEP</label>
+                        <Input value={address.cep} onChange={(e) => setAddress({ ...address, cep: formatCEP(e.target.value) })} onBlur={lookupCEP} placeholder="00000-000" />
+                        {cepLoading && <p className="mt-1 text-xs text-zinc-600">Buscando endereço...</p>}
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="mb-1 block text-sm">Endereço</label>
+                        <Input value={address.endereco} onChange={(e) => setAddress({ ...address, endereco: e.target.value })} placeholder="Rua Exemplo" />
+                      </div>
+                    </div>
+                  </>
+                  )}
+                  {showNewAddressForm && (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                    <div>
+                      <label className="mb-1 block text-sm">Número</label>
+                      <Input value={address.numero} onChange={(e) => setAddress({ ...address, numero: e.target.value })} placeholder="123" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm">Complemento</label>
+                      <Input value={address.complemento} onChange={(e) => setAddress({ ...address, complemento: e.target.value })} placeholder="Apto, bloco, etc." />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm">Bairro</label>
+                      <Input value={address.bairro} onChange={(e) => setAddress({ ...address, bairro: e.target.value })} placeholder="Centro" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm">Cidade</label>
+                      <Input value={address.cidade} onChange={(e) => setAddress({ ...address, cidade: e.target.value })} placeholder="São Paulo" />
+                    </div>
+                  </div>
+                  )}
+                  {showNewAddressForm && (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                    <div>
+                      <label className="mb-1 block text-sm">Estado (UF)</label>
+                      <Input value={address.estado} onChange={(e) => setAddress({ ...address, estado: e.target.value.toUpperCase() })} placeholder="SP" />
+                    </div>
+                  </div>
+                  )}
+                  {error && <p className="text-xs text-red-600">{error}</p>}
+                  <div className="flex justify-between">
+                    <button onClick={() => setStep(1)} className="text-xs hover:text-primary">Voltar para sacola</button>
+                    <div className="flex gap-2">
+                      {showNewAddressForm && (
+                        <Button variant={"outline" as any} className="border-rose-200 text-rose-900" onClick={() => createAddress()}>Salvar endereço</Button>
+                      )}
+                      <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(3)} disabled={!loggedIn}>Ir para frete</Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="flex justify-between">
-              <button onClick={() => setStep(2)} className="text-xs hover:text-primary">Voltar para endereço</button>
-              <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(4)}>Ir para pagamento</Button>
-            </div>
-          </div>
-        )}
 
-        {step === 4 && (
-          <div className="mt-4 space-y-4">
-            <div className="rounded border bg-rose-50 p-3">
-              <div className="flex items-center gap-2 text-rose-600">
-                <Heart size={18} />
-                <span className="text-sm font-medium">Pagamento via Pix (instantâneo)</span>
-              </div>
-              <p className="mt-2 text-xs text-rose-900">Geraremos um QR code após confirmar. Total: <span className="font-semibold">{currencyBRL(total)}</span></p>
+            {/* Frete */}
+            <div className="w-1/6 px-1">
+              {step === 3 && (
+                <div className="space-y-3">
+                  <div className="rounded border bg-rose-50 p-3 text-sm">
+                    <div className="font-semibold">Selecione o frete</div>
+                    <div className="mt-2 space-y-2">
+                      {shippingOptions.map((opt) => (
+                        <label key={opt.key} className="flex items-center justify-between rounded border p-2 text-xs">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              name="shipping"
+                              checked={shippingMethod.key === opt.key}
+                              onChange={() => setShippingMethod(opt)}
+                            />
+                            <span className="font-medium">{opt.label}</span>
+                            <span className="text-zinc-600">{opt.eta}</span>
+                          </div>
+                          <span className="text-rose-900">{currencyBRL(opt.price)}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex justify-between">
+                    <button onClick={() => setStep(2)} className="text-xs hover:text-primary">Voltar para endereço</button>
+                    <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(4)}>Ir para pagamento</Button>
+                  </div>
+                </div>
+              )}
             </div>
-            {error && <p className="text-xs text-red-600">{error}</p>}
-            <div className="flex justify-between">
-              <button onClick={() => setStep(3)} className="text-xs hover:text-primary">Voltar para frete</button>
-              <Button className="bg-rose-200 text-rose-900" onClick={finalizeOrder}>Confirmar pedido</Button>
-            </div>
-          </div>
-        )}
 
-        {step === 5 && (
-          <div className="mt-4 space-y-4">
-            <div className="rounded border bg-green-50 p-3 text-sm text-green-700">
-              <span>Pedido confirmado! Em instantes enviaremos instruções de pagamento.</span>
+            {/* Pagamento */}
+            <div className="w-1/6 px-1">
+              {step === 4 && (
+                <div className="space-y-4">
+                  <div className="rounded border bg-rose-50 p-3 text-sm">
+                    <div className="font-semibold">Forma de pagamento</div>
+                    <div className="mt-2 flex gap-2">
+                      {[
+                        { key: "pix", label: "PIX" },
+                        { key: "cartao", label: "Cartão" },
+                        { key: "boleto", label: "Boleto" },
+                      ].map((m) => (
+                        <button
+                          key={m.key}
+                          onClick={() => setPaymentMethod(m.key as any)}
+                          className={`rounded px-3 py-1 ${paymentMethod === m.key ? "bg-rose-200 text-rose-900" : "bg-muted"}`}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
+                    </div>
+                    {paymentMethod === "pix" && (
+                      <p className="mt-2 text-xs text-rose-900">Geraremos um QR code após confirmar. Total: <span className="font-semibold">{currencyBRL(total)}</span></p>
+                    )}
+                    {paymentMethod === "cartao" && (
+                      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="sm:col-span-2">
+                          <label className="mb-1 block text-xs">Nome impresso no cartão</label>
+                          <Input value={card.nome} onChange={(e) => setCard({ ...card, nome: e.target.value })} placeholder="Nome completo" />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs">Número</label>
+                          <Input value={card.numero} onChange={(e) => setCard({ ...card, numero: e.target.value })} placeholder="0000 0000 0000 0000" />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs">Validade</label>
+                          <Input value={card.validade} onChange={(e) => setCard({ ...card, validade: e.target.value })} placeholder="MM/AA" />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs">CVV</label>
+                          <Input value={card.cvv} onChange={(e) => setCard({ ...card, cvv: e.target.value })} placeholder="123" />
+                        </div>
+                      </div>
+                    )}
+                    {paymentMethod === "boleto" && (
+                      <div className="mt-3">
+                        <label className="mb-1 block text-xs">CPF do pagador</label>
+                        <Input value={boletoCpf} onChange={(e) => setBoletoCpf(e.target.value)} placeholder="000.000.000-00" />
+                        <p className="mt-1 text-[11px] text-zinc-600">O boleto será gerado após confirmação.</p>
+                      </div>
+                    )}
+                  </div>
+                  {error && <p className="text-xs text-red-600">{error}</p>}
+                  <div className="flex justify-between">
+                    <button onClick={() => setStep(3)} className="text-xs hover:text-primary">Voltar para frete</button>
+                    <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(5)}>Continuar</Button>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="flex justify-end">
-              <Button className="bg-rose-200 text-rose-900" onClick={onClose}>Fechar</Button>
+
+            {/* Finalizar */}
+            <div className="w-1/6 px-1">
+              {step === 5 && (
+                <div className="space-y-4">
+                  {!orderConfirmed ? (
+                    <>
+                      <div className="rounded border bg-rose-50 p-3 text-sm">
+                        <div className="font-semibold">Resumo do pedido</div>
+                        <div className="mt-2 space-y-2">
+                          <div>
+                            <div className="text-xs font-medium">Itens</div>
+                            <ul className="mt-1 space-y-1 text-xs text-zinc-700">
+                              {items.map((it) => (
+                                <li key={it.productId} className="flex justify-between">
+                                  <span>{it.title} × {it.qty}</span>
+                                  <span>{currencyBRL(it.price * it.qty)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div>
+                            <div className="text-xs font-medium">Endereço</div>
+                            <p className="text-xs text-zinc-700">
+                              {(() => {
+                                const sel = addresses.find((a: any) => a.id === selectedAddressId) || address;
+                                const cep = "cep" in sel ? sel.cep : sel?.cep;
+                                const end = "endereco" in sel ? sel.endereco : sel?.endereco;
+                                const num = "numero" in sel ? sel.numero : sel?.numero;
+                                const bai = "bairro" in sel ? sel.bairro : sel?.bairro;
+                                const cid = "cidade" in sel ? sel.cidade : sel?.cidade;
+                                const uf = "estado" in sel ? sel.estado : sel?.estado;
+                                return `${end}, ${num} — ${bai}, ${cid}/${uf} • CEP ${formatCEP(cep || "")}`;
+                              })()}
+                            </p>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <div className="text-xs font-medium">Frete ({shippingMethod.label}, {shippingMethod.eta})</div>
+                            <div className="text-xs">{currencyBRL(shippingMethod.price)}</div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <div className="text-xs font-medium">Pagamento</div>
+                            <div className="text-xs capitalize">{paymentMethod}</div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm font-semibold">Total</div>
+                            <div className="text-sm font-semibold text-rose-900">{currencyBRL(total + shippingMethod.price)}</div>
+                          </div>
+                        </div>
+                      </div>
+                      {error && <p className="text-xs text-red-600">{error}</p>}
+                      <div className="flex justify-between">
+                        <button onClick={() => setStep(4)} className="text-xs hover:text-primary">Voltar para pagamento</button>
+                        <Button className="bg-rose-200 text-rose-900" onClick={finalizeOrder}>Confirmar pedido</Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="rounded border bg-green-50 p-3 text-sm text-green-700">
+                        <span>Pedido confirmado! Em instantes enviaremos instruções de pagamento.</span>
+                      </div>
+                      <div className="flex justify-end">
+                        <Button className="bg-rose-200 text-rose-900" onClick={onClose}>Fechar</Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
-        )}
+        </div>
       </div>
     </Modal>
   );

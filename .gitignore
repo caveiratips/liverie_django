@@ -12,7 +12,7 @@ Thumbs.db
 .env.*
 
 # --- Backend (Django) ---
-api/.venv/
+.venv/
 api/__pycache__/
 api/**/*.pyc
 api/**/*.pyo

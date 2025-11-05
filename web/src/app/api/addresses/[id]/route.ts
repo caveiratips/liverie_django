@@ -1,14 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { cookies } from "next/headers";
 
 const BASE = "http://localhost:8000/api/addresses/";
 
-export async function PATCH(_: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
   const cookieStore = await cookies();
   const token = cookieStore.get("auth_token")?.value || null;
   if (!token) return NextResponse.json({ detail: "Não autenticado" }, { status: 401 });
-  const id = params.id;
-  const body = await _.json().catch(() => ({}));
+  const body = await req.json().catch(() => ({}));
   try {
     const res = await fetch(`${BASE}${id}/`, {
       method: "PATCH",
@@ -22,11 +22,11 @@ export async function PATCH(_: Request, { params }: { params: { id: string } }) 
   }
 }
 
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
   const cookieStore = await cookies();
   const token = cookieStore.get("auth_token")?.value || null;
   if (!token) return NextResponse.json({ detail: "Não autenticado" }, { status: 401 });
-  const id = params.id;
   try {
     const res = await fetch(`${BASE}${id}/`, {
       method: "DELETE",

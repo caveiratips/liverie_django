@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -907,6 +908,516 @@ function UsersAdmin() {
   );
 }
 
+function CustomersAdmin() {
+  const [items, setItems] = useState<Array<any>>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [selected, setSelected] = useState<any | null>(null);
+  const [editMode, setEditMode] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    const url = q ? `/api/admin/customers?q=${encodeURIComponent(q)}` : "/api/admin/customers";
+    const res = await fetch(url, { cache: "no-store" });
+    const data = res.ok ? await res.json() : [];
+    setItems(Array.isArray(data) ? data : []);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function viewCustomer(id: number) {
+    setError(null);
+    const res = await fetch(`/api/admin/customers/${id}/`, { cache: "no-store" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data?.detail || "Falha ao carregar cliente");
+      return;
+    }
+    const det = await res.json();
+    setSelected(det);
+    setEditMode(false);
+  }
+
+  async function editCustomer(id: number) {
+    setError(null);
+    const res = await fetch(`/api/admin/customers/${id}/`, { cache: "no-store" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data?.detail || "Falha ao carregar cliente");
+      return;
+    }
+    const det = await res.json();
+    setSelected(det);
+    setEditMode(true);
+  }
+
+  async function saveCustomer() {
+    if (!selected) return;
+    setError(null);
+    const payload = {
+      email: selected.email || "",
+      first_name: selected.first_name || "",
+      last_name: selected.last_name || "",
+      profile: {
+        telefone: selected.profile?.telefone || "",
+        cpf: selected.profile?.cpf || "",
+        cep: selected.profile?.cep || "",
+        endereco: selected.profile?.endereco || "",
+        numero: selected.profile?.numero || "",
+        complemento: selected.profile?.complemento || "",
+        bairro: selected.profile?.bairro || "",
+        cidade: selected.profile?.cidade || "",
+        estado: selected.profile?.estado || "",
+      },
+    };
+    const res = await fetch(`/api/admin/customers/${selected.id}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data?.detail || "Falha ao salvar cliente");
+      return;
+    }
+    const updated = await res.json();
+    setSelected(updated);
+    setItems((prev) => prev.map((c) => (c.id === updated.id ? { ...c, email: updated.email, first_name: updated.first_name, last_name: updated.last_name, profile: updated.profile } : c)));
+    setEditMode(false);
+  }
+
+  async function deleteCustomer(id: number) {
+    if (!confirm("Tem certeza que deseja excluir este cliente?")) return;
+    setError(null);
+    const res = await fetch(`/api/admin/customers/${id}/`, { method: "DELETE" });
+    if (!res.ok) {
+      let data: any = {};
+      try { data = await res.json(); } catch {}
+      setError(data?.detail || "Falha ao excluir cliente");
+      return;
+    }
+    setItems((prev) => prev.filter((c) => c.id !== id));
+    if (selected?.id === id) setSelected(null);
+  }
+
+  return (
+    <div>
+      <h3 className="mb-3 text-lg font-semibold">Clientes</h3>
+      <div className="mb-3 flex gap-2">
+        <Input className="flex-1" placeholder="Buscar por nome, email ou usuário" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Button className="bg-primary text-black" onClick={load}>Buscar</Button>
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-zinc-600">Carregando...</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="p-2 text-left">ID</th>
+                <th className="p-2 text-left">Nome</th>
+                <th className="p-2 text-left">Email</th>
+                <th className="p-2 text-left">Cidade/UF</th>
+                <th className="p-2 text-left">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((c) => {
+                const nome = `${c.first_name || ""} ${c.last_name || ""}`.trim() || c.username || "—";
+                const cidadeUF = c.profile ? `${c.profile.cidade || ""}/${c.profile.estado || ""}`.replace(/\/\//g, "") : "—";
+                return (
+                  <tr key={c.id} className="border-b">
+                    <td className="p-2">{c.id}</td>
+                    <td className="p-2">{nome}</td>
+                    <td className="p-2">{c.email || "—"}</td>
+                    <td className="p-2">{cidadeUF || "—"}</td>
+                    <td className="p-2">
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => viewCustomer(c.id)}>Visualizar</Button>
+                        <Button size="sm" className="bg-primary text-black" onClick={() => editCustomer(c.id)}>Editar</Button>
+                        <Button size="sm" variant="destructive" onClick={() => deleteCustomer(c.id)}>Excluir</Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {items.length === 0 && (
+                <tr>
+                  <td className="p-2 text-sm text-zinc-600" colSpan={5}>Nenhum cliente encontrado.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {selected && (
+        <Card className="mt-6 p-4">
+          <h4 className="mb-3 text-md font-semibold">{editMode ? "Editar Cliente" : "Detalhes do Cliente"}</h4>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm">Email</label>
+              <Input disabled={!editMode} value={selected.email || ""} onChange={(e) => setSelected((prev: any) => ({ ...prev, email: e.target.value }))} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm">Primeiro Nome</label>
+              <Input disabled={!editMode} value={selected.first_name || ""} onChange={(e) => setSelected((prev: any) => ({ ...prev, first_name: e.target.value }))} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm">Sobrenome</label>
+              <Input disabled={!editMode} value={selected.last_name || ""} onChange={(e) => setSelected((prev: any) => ({ ...prev, last_name: e.target.value }))} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm">Telefone</label>
+              <Input disabled={!editMode} value={selected.profile?.telefone || ""} onChange={(e) => setSelected((prev: any) => ({ ...prev, profile: { ...prev.profile, telefone: e.target.value } }))} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm">CPF</label>
+              <Input disabled={!editMode} value={selected.profile?.cpf || ""} onChange={(e) => setSelected((prev: any) => ({ ...prev, profile: { ...prev.profile, cpf: e.target.value } }))} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm">CEP</label>
+              <Input disabled={!editMode} value={selected.profile?.cep || ""} onChange={(e) => setSelected((prev: any) => ({ ...prev, profile: { ...prev.profile, cep: e.target.value } }))} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-sm">Endereço</label>
+              <Input disabled={!editMode} value={selected.profile?.endereco || ""} onChange={(e) => setSelected((prev: any) => ({ ...prev, profile: { ...prev.profile, endereco: e.target.value } }))} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm">Número</label>
+              <Input disabled={!editMode} value={selected.profile?.numero || ""} onChange={(e) => setSelected((prev: any) => ({ ...prev, profile: { ...prev.profile, numero: e.target.value } }))} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm">Complemento</label>
+              <Input disabled={!editMode} value={selected.profile?.complemento || ""} onChange={(e) => setSelected((prev: any) => ({ ...prev, profile: { ...prev.profile, complemento: e.target.value } }))} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm">Bairro</label>
+              <Input disabled={!editMode} value={selected.profile?.bairro || ""} onChange={(e) => setSelected((prev: any) => ({ ...prev, profile: { ...prev.profile, bairro: e.target.value } }))} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm">Cidade</label>
+              <Input disabled={!editMode} value={selected.profile?.cidade || ""} onChange={(e) => setSelected((prev: any) => ({ ...prev, profile: { ...prev.profile, cidade: e.target.value } }))} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm">Estado (UF)</label>
+              <Input disabled={!editMode} value={selected.profile?.estado || ""} onChange={(e) => setSelected((prev: any) => ({ ...prev, profile: { ...prev.profile, estado: e.target.value } }))} />
+            </div>
+          </div>
+
+          <div className="mt-4 flex items-center gap-2">
+            {!editMode && (
+              <Button className="bg-primary text-black" onClick={() => setEditMode(true)}>Editar</Button>
+            )}
+            {editMode && (
+              <>
+                <Button className="bg-primary text-black" onClick={saveCustomer}>Salvar</Button>
+                <Button variant="outline" onClick={() => setEditMode(false)}>Cancelar</Button>
+              </>
+            )}
+            <Button variant="destructive" onClick={() => deleteCustomer(selected.id)}>Excluir Cliente</Button>
+          </div>
+          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        </Card>
+      )}
+      {error && !selected && <p className="mt-2 text-sm text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+function OrdersAdmin() {
+  const router = useRouter();
+  const [orders, setOrders] = useState<Array<any>>([]);
+  const [statuses, setStatuses] = useState<Array<{ id: number; key: string; label: string; is_active?: boolean }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fallbackStatuses = [
+    { key: "pending", label: "Pendente" },
+    { key: "paid", label: "Pago" },
+    { key: "separation", label: "Em separação" },
+    { key: "shipped", label: "Enviado" },
+    { key: "delivered", label: "Entregue" },
+  ];
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    const [oRes, sRes] = await Promise.all([
+      fetch("/api/admin/orders", { cache: "no-store" }),
+      fetch("/api/admin/order-statuses", { cache: "no-store" }),
+    ]);
+    const oData = oRes.ok ? await oRes.json() : [];
+    const sData = sRes.ok ? await sRes.json() : [];
+    setOrders(Array.isArray(oData) ? oData : []);
+    const activeStatuses = Array.isArray(sData) ? sData.filter((s: any) => s.is_active) : [];
+    setStatuses(activeStatuses.length ? activeStatuses : fallbackStatuses.map((s, i) => ({ id: i + 1, key: s.key, label: s.label, is_active: true })));
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function updateStatus(orderId: number, statusKey: string) {
+    setError(null);
+    const res = await fetch(`/api/admin/orders/${orderId}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: statusKey }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data?.detail || "Falha ao atualizar status");
+      return;
+    }
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: statusKey } : o)));
+  }
+
+  function openDetail(o: any) {
+    const slug = o.order_number || o.id;
+    router.push(`/gerenciamento/pedidos/${slug}`);
+  }
+
+  function openEdit(o: any) {
+    const slug = o.order_number || o.id;
+    router.push(`/gerenciamento/pedidos/${slug}/editar`);
+  }
+
+  async function deleteOrder(id: number) {
+    if (!confirm("Tem certeza que deseja excluir este pedido?")) return;
+    const res = await fetch(`/api/admin/orders/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data?.detail || "Falha ao excluir pedido");
+      return;
+    }
+    setOrders((prev) => prev.filter((o) => o.id !== id));
+  }
+
+  return (
+    <div>
+      <h3 className="mb-3 text-lg font-semibold">Pedidos/Vendas</h3>
+      {loading ? (
+        <p className="text-sm text-zinc-600">Carregando...</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="p-2 text-left">Pedido</th>
+                <th className="p-2 text-left">Cliente</th>
+                <th className="p-2 text-left">Status</th>
+                <th className="p-2 text-left">Total</th>
+                <th className="p-2 text-left">Criado</th>
+                <th className="p-2 text-left">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orders.map((o) => (
+                <tr key={o.id} className="border-b">
+                  <td className="p-2">{o.order_number || o.id}</td>
+                  <td className="p-2">{o.customer_name || "—"}<br /><span className="text-xs text-zinc-500">{o.customer_email || ""}</span></td>
+                  <td className="p-2">
+                    <select
+                      value={o.status}
+                      onChange={(e) => updateStatus(o.id, e.target.value)}
+                      className="rounded border px-2 py-1"
+                    >
+                      {statuses.map((s) => (
+                        <option key={s.key} value={s.key}>{s.label}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="p-2">R$ {Number(o.total || 0).toFixed(2)}</td>
+                  <td className="p-2">{new Date(o.created_at).toLocaleString()}</td>
+                  <td className="p-2">
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => openDetail(o)}>Visualizar</Button>
+                      <Button size="sm" className="bg-primary text-black" onClick={() => openEdit(o)}>Editar</Button>
+                      <Button size="sm" variant="destructive" onClick={() => deleteOrder(o.id)}>Deletar</Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {orders.length === 0 && (
+                <tr>
+                  <td className="p-2 text-sm text-zinc-600" colSpan={5}>Nenhum pedido encontrado.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+
+    </div>
+  );
+}
+
+function OrderStatusesAdmin() {
+  const [items, setItems] = useState<Array<any>>([]);
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+  const [sort, setSort] = useState(0);
+  const [active, setActive] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  function slugify(s: string) {
+    return s
+      .normalize("NFD")
+      // @ts-ignore remove diacritics
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-");
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function load() {
+    const res = await fetch("/api/admin/order-statuses", { cache: "no-store" });
+    const data = res.ok ? await res.json() : [];
+    setItems(Array.isArray(data) ? data : []);
+  }
+
+  async function createStatus() {
+    setError(null);
+    const payload = { label, key: key || slugify(label), sort_order: sort, is_active: active };
+    const res = await fetch("/api/admin/order-statuses/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      setLabel("");
+      setKey("");
+      setSort(0);
+      setActive(true);
+      await load();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setError(data?.detail || "Erro ao criar status");
+    }
+  }
+
+  async function updateItem(it: any) {
+    setError(null);
+    const res = await fetch(`/api/admin/order-statuses/${it.id}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: it.label, key: it.key, sort_order: it.sort_order, is_active: it.is_active }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data?.detail || "Erro ao atualizar");
+    }
+  }
+
+  async function removeItem(id: number) {
+    setError(null);
+    const res = await fetch(`/api/admin/order-statuses/${id}/`, { method: "DELETE" });
+    if (res.ok) {
+      setItems((prev) => prev.filter((i) => i.id !== id));
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setError(data?.detail || "Erro ao remover");
+    }
+  }
+
+  return (
+    <div>
+      <h3 className="mb-3 text-lg font-semibold">Status do Pedido</h3>
+      <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-4">
+        <Input placeholder="Label" value={label} onChange={(e) => setLabel(e.target.value)} />
+        <Input placeholder="Key (slug)" value={key} onChange={(e) => setKey(e.target.value)} />
+        <Input placeholder="Ordem" value={String(sort)} onChange={(e) => setSort(parseInt(e.target.value || "0") || 0)} />
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Ativo
+        </label>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button className="bg-primary text-black" onClick={createStatus}>Criar status</Button>
+      </div>
+
+      <div className="mt-6 overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="border-b">
+              <th className="p-2 text-left">Label</th>
+              <th className="p-2 text-left">Key</th>
+              <th className="p-2 text-left">Ordem</th>
+              <th className="p-2 text-left">Ativo</th>
+              <th className="p-2 text-left">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it, idx) => (
+              <tr key={it.id || idx} className="border-b">
+                <td className="p-2"><Input value={it.label} onChange={(e) => setItems((prev) => prev.map((p) => p.id === it.id ? { ...p, label: e.target.value } : p))} /></td>
+                <td className="p-2"><Input value={it.key} onChange={(e) => setItems((prev) => prev.map((p) => p.id === it.id ? { ...p, key: e.target.value } : p))} /></td>
+                <td className="p-2"><Input value={String(it.sort_order ?? 0)} onChange={(e) => setItems((prev) => prev.map((p) => p.id === it.id ? { ...p, sort_order: parseInt(e.target.value || "0") || 0 } : p))} /></td>
+                <td className="p-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={!!it.is_active} onChange={(e) => setItems((prev) => prev.map((p) => p.id === it.id ? { ...p, is_active: e.target.checked } : p))} /> Ativo
+                  </label>
+                </td>
+                <td className="p-2">
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" onClick={() => updateItem(it)}>Salvar</Button>
+                    <Button size="sm" variant="outline" onClick={() => removeItem(it.id)}>Excluir</Button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {items.length === 0 && (
+              <tr>
+                <td className="p-2 text-sm text-zinc-600" colSpan={5}>Nenhum status cadastrado.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+function SettingsAdmin() {
+  const [activeTab, setActiveTab] = useState<string>("site");
+  return (
+    <div>
+      <h3 className="mb-3 text-lg font-semibold">Configurações</h3>
+      <div className="mb-4 flex flex-wrap gap-2">
+        <button
+          className={clsx("rounded px-3 py-1", activeTab === "site" ? "bg-primary text-black" : "border")}
+          onClick={() => setActiveTab("site")}
+        >
+          Configurações do Site
+        </button>
+        <button
+          className={clsx("rounded px-3 py-1", activeTab === "order_statuses" ? "bg-primary text.black" : "border")}
+          onClick={() => setActiveTab("order_statuses")}
+        >
+          Status do Pedido
+        </button>
+      </div>
+      {activeTab === "site" && <Placeholder title="Configurações do Site" />}
+      {activeTab === "order_statuses" && <OrderStatusesAdmin />}
+    </div>
+  );
+}
+
 function Placeholder({ title }: { title: string }) {
   return (
     <Card className="p-4">
@@ -919,6 +1430,7 @@ function Placeholder({ title }: { title: string }) {
 export default function ManagementPage() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [active, setActive] = useState("dashboard");
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     // ping categorias admin; se autorizado (200) considera logado
@@ -926,6 +1438,11 @@ export default function ManagementPage() {
       setLoggedIn(res.ok);
     });
   }, []);
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab) setActive(tab);
+  }, [searchParams]);
 
   if (!loggedIn) {
     return (
@@ -965,8 +1482,8 @@ export default function ManagementPage() {
           {active === "categories" && <CategoriesAdmin />}
           {active === "products" && <ProductsAdmin />}
           {active === "users" && <UsersAdmin />}
-          {active === "orders" && <Placeholder title="Pedidos/Vendas" />}
-          {active === "customers" && <Placeholder title="Clientes" />}
+          {active === "orders" && <OrdersAdmin />}
+          {active === "customers" && <CustomersAdmin />}
           {active === "inventory" && <Placeholder title="Inventário" />}
           {active === "promotions" && <Placeholder title="Promoções/Cupons" />}
           {active === "marketing" && <Placeholder title="Marketing" />}
@@ -976,7 +1493,8 @@ export default function ManagementPage() {
           {active === "banners" && <Placeholder title="Banners" />}
           {active === "pages" && <Placeholder title="Páginas" />}
           {active === "seo" && <Placeholder title="SEO" />}
-          {active === "settings" && <Placeholder title="Configurações do Site" />}
+          {active === "settings" && <SettingsAdmin />}
+          {active === "order_statuses" && <OrderStatusesAdmin />}
         </main>
       </div>
     </div>

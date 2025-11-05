@@ -1,6 +1,9 @@
 from django.db import models
 from django.conf import settings
 from django.utils.text import slugify
+from django.utils import timezone
+import random
+import string
 
 
 class Category(models.Model):
@@ -122,3 +125,66 @@ class CustomerAddress(models.Model):
     def __str__(self):
         base = self.label or self.endereco
         return f"{base} ({self.cidade}-{self.estado})"
+
+
+class OrderStatus(models.Model):
+    key = models.SlugField(max_length=24, unique=True)
+    label = models.CharField(max_length=60)
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["sort_order", "label"]
+
+    def __str__(self):
+        return self.label
+
+
+# Pedidos
+class Order(models.Model):
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="orders")
+    order_number = models.CharField(max_length=20, unique=True, blank=True)
+    # Status livre para permitir configuração dinâmica
+    status = models.CharField(max_length=40, default="pending")
+    total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    payment_method = models.CharField(max_length=40, blank=True, default="")
+    shipping_method = models.CharField(max_length=40, blank=True, default="")
+    recipient_name = models.CharField(max_length=120, blank=True, default="")
+    shipping_address_text = models.TextField(blank=True, default="")
+    delivery_address = models.ForeignKey('CustomerAddress', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Pedido {self.order_number}"
+
+    def _generate_order_number(self):
+        # Formato: LIV-YYMMDD-RND4
+        dt = timezone.now().strftime("%y%m%d")
+        rnd = "".join(random.choices(string.digits, k=4))
+        return f"LIV-{dt}-{rnd}"
+
+    def save(self, *args, **kwargs):
+        if not self.order_number:
+            candidate = self._generate_order_number()
+            # Garantir unicidade
+            while Order.objects.filter(order_number=candidate).exists():
+                candidate = self._generate_order_number()
+            self.order_number = candidate
+        super().save(*args, **kwargs)
+
+
+class OrderItem(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey('Product', on_delete=models.SET_NULL, null=True, blank=True)
+    title = models.CharField(max_length=180)
+    image_url = models.URLField(blank=True, default="")
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2)
+    quantity = models.PositiveIntegerField(default=1)
+
+    def __str__(self):
+        return f"Item {self.title} x{self.quantity}"
