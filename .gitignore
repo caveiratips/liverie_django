@@ -1,4 +1,6 @@
-# Root .gitignore para projeto Django + Next.js
+# ================================
+# Root .gitignore - Django + Next.js
+# ================================
 
 # --- Comuns / OS / Editores ---
 .DS_Store
@@ -7,21 +9,56 @@ Thumbs.db
 .vscode/
 *.log
 
-# --- Variáveis de ambiente ---
+# --- Ambientes virtuais / Python ---
 .env
 .env.*
-
-# --- Backend (Django) ---
+.env/
+env/
 .venv/
-api/__pycache__/
-api/**/*.pyc
-api/**/*.pyo
-api/**/*.pyd
-api/.pytest_cache/
+venv/
+api/venv/
+
+# --- Compilação e cache do Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.pdb
+*.egg
+*.egg-info/
+dist/
+build/
+pip-wheel-metadata/
+.eggs/
+
+# --- Banco de dados e media local ---
+*.sqlite3
 api/db.sqlite3
 api/media/
+media/
+staticfiles/
 
-# --- Frontend (Next.js) ---
+# --- Testes / Pytest / Coverage ---
+.pytest_cache/
+.coverage
+.tox/
+.mypy_cache/
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.cache
+
+# --- Backend (Django) ---
+api/__pycache__/
+api/**/*.pyc
+api/.pytest_cache/
+api/migrations/__pycache__/
+api/migrations/**/*.pyc
+
+# --- Frontend (Next.js / React) ---
 web/node_modules/
 web/.next/
 web/out/
@@ -31,8 +68,28 @@ web/*.tsbuildinfo
 web/.vercel/
 web/.pnp
 web/.pnp.*
+*.tsbuildinfo
 
 # --- Docker / Artefatos de build ---
 *.tar
 *.gz
 *.zip
+*.bak
+*.tmp
+
+# --- Logs / Configuração local ---
+*.log
+*.pid
+*.seed
+*.pot
+*.mo
+
+# --- Configurações de implantação ---
+*.env.local
+*.env.production
+*.env.development
+*.env.staging
+
+# --- VSCode / IDE específicas ---
+.vscode/
+.idea/
