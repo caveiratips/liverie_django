@@ -162,8 +162,41 @@ class ProductSerializer(serializers.ModelSerializer):
         return [p for p in parts if p]
 
     def get_colors(self, obj):
+        """
+        Retorna lista de objetos {name, hex} a partir de available_colors.
+        Aceita formatos:
+        - "Nome|#hex" (preferido)
+        - "Nome:#hex"
+        - "#hex" ou "rgb(...)" ou "hsl(...)" (usa como name e hex)
+        - "Nome" (sem cor definida)
+        """
+        import re
         try:
-            return self._split_csv(getattr(obj, "available_colors", ""))
+            raw = getattr(obj, "available_colors", "") or ""
+            items = self._split_csv(raw)
+            color_re = re.compile(r"^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})|rgb\(|hsl\()")
+            out = []
+            for it in items:
+                s = (it or "").strip()
+                name = ""
+                hexv = None
+                if "|" in s:
+                    parts = s.split("|", 1)
+                    name = (parts[0] or "").strip()
+                    hexv = (parts[1] or "").strip() or None
+                elif ":" in s:
+                    parts = s.split(":", 1)
+                    name = (parts[0] or "").strip()
+                    hexv = (parts[1] or "").strip() or None
+                else:
+                    if color_re.match(s):
+                        name = s
+                        hexv = s
+                    else:
+                        name = s
+                        hexv = None
+                out.append({"name": name, "hex": hexv})
+            return out
         except Exception:
             return []
 
