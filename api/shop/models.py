@@ -45,6 +45,9 @@ class Product(models.Model):
     length = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     taxable = models.BooleanField(default=True)
     tags = models.TextField(blank=True, default='')  # comma-separated
+    # Novos atributos administráveis: cores e tamanhos disponíveis (separados por vírgula)
+    available_colors = models.TextField(blank=True, default='')
+    available_sizes = models.TextField(blank=True, default='')
     seo_title = models.CharField(max_length=180, blank=True, default='')
     seo_description = models.CharField(max_length=300, blank=True, default='')
     is_featured = models.BooleanField(default=False)

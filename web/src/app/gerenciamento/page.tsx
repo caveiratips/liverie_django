@@ -140,6 +140,8 @@ function ProductsAdmin() {
   const [length, setLength] = useState("");
   const [taxable, setTaxable] = useState(true);
   const [tags, setTags] = useState("");
+  const [colors, setColors] = useState<string[]>([]);
+  const [sizes, setSizes] = useState("");
   const [seoTitle, setSeoTitle] = useState("");
   const [seoDescription, setSeoDescription] = useState("");
   const [isFeatured, setIsFeatured] = useState(false);
@@ -422,6 +424,8 @@ function ProductsAdmin() {
         length: lNum,
         taxable,
         tags,
+        available_colors: (colors || []).join(", "),
+        available_sizes: sizes,
         seo_title: seoTitle,
         seo_description: seoDescription,
         is_featured: isFeatured,
@@ -459,6 +463,8 @@ function ProductsAdmin() {
       setLength("");
       setTaxable(true);
       setTags("");
+      setColors([]);
+      setSizes("");
       setSeoTitle("");
       setSeoDescription("");
       setIsFeatured(false);
@@ -505,6 +511,15 @@ function ProductsAdmin() {
     setLength(p.length != null ? formatDecimal3Input(String(p.length)) : "");
     setTaxable(Boolean(p.taxable));
     setTags(p.tags || "");
+    const colorsArr = Array.isArray(p.colors)
+      ? p.colors
+      : String(p.available_colors || "")
+          .split(/[;,]/)
+          .map((s: string) => s.trim())
+          .filter(Boolean);
+    const sizesCsv = Array.isArray(p.sizes) ? p.sizes.join(", ") : (p.available_sizes || "");
+    setColors(colorsArr || []);
+    setSizes(sizesCsv || "");
     setSeoTitle(p.seo_title || "");
     setSeoDescription(p.seo_description || "");
     setIsFeatured(Boolean(p.is_featured));
@@ -577,6 +592,45 @@ function ProductsAdmin() {
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input placeholder="Tags (separadas por vírgula)" value={tags} onChange={(e) => setTags(e.target.value)} />
+          {/* Paleta de cores (múltiplas) */}
+          <div>
+            <div className="mb-1 text-sm">Cores (paleta)</div>
+            <div className="flex flex-wrap items-center gap-3">
+              {colors.map((c, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(c) ? c : "#000000"}
+                    onChange={(e) => {
+                      const next = [...colors];
+                      next[idx] = e.target.value;
+                      setColors(next);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="text-xs text-red-600 hover:underline"
+                    onClick={() => {
+                      const next = colors.filter((_, i) => i !== idx);
+                      setColors(next);
+                    }}
+                    aria-label="Remover cor"
+                  >
+                    Remover
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="rounded-md border px-2 py-1 text-xs"
+                onClick={() => setColors([...(colors || []), "#000000"]) }
+              >
+                + Adicionar cor
+              </button>
+            </div>
+            <div className="mt-1 text-xs text-zinc-500">As cores escolhidas serão exibidas como swatches na página do produto.</div>
+          </div>
+          <Input placeholder="Tamanhos (separados por vírgula)" value={sizes} onChange={(e) => setSizes(e.target.value)} />
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={taxable} onChange={(e) => setTaxable(e.target.checked)} /> Tributável
           </label>

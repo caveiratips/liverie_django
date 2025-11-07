@@ -16,6 +16,8 @@ class ProductSerializer(serializers.ModelSerializer):
     )
     images = serializers.SerializerMethodField()
     available_for_sale = serializers.SerializerMethodField()
+    colors = serializers.SerializerMethodField()
+    sizes = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -42,6 +44,8 @@ class ProductSerializer(serializers.ModelSerializer):
             "length",
             "taxable",
             "tags",
+            "available_colors",
+            "available_sizes",
             "seo_title",
             "seo_description",
             "is_featured",
@@ -51,6 +55,8 @@ class ProductSerializer(serializers.ModelSerializer):
             "updated_at",
             "images",
             "available_for_sale",
+            "colors",
+            "sizes",
         ]
 
     # Helpers
@@ -141,6 +147,31 @@ class ProductSerializer(serializers.ModelSerializer):
         if obj.track_inventory:
             return (obj.stock_quantity or 0) > 0
         return True
+
+    def _split_csv(self, text):
+        if not text:
+            return []
+        # Split por vírgula e ponto-e-vírgula, remover espaços extras, ignorar vazios
+        parts = []
+        for ch in [",", ";"]:
+            if ch in text:
+                parts = [p.strip() for p in text.split(ch)]
+                break
+        if not parts:
+            parts = [text.strip()]
+        return [p for p in parts if p]
+
+    def get_colors(self, obj):
+        try:
+            return self._split_csv(getattr(obj, "available_colors", ""))
+        except Exception:
+            return []
+
+    def get_sizes(self, obj):
+        try:
+            return self._split_csv(getattr(obj, "available_sizes", ""))
+        except Exception:
+            return []
 
 
 class ProductImageSerializer(serializers.ModelSerializer):

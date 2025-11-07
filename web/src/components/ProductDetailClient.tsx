@@ -13,6 +13,8 @@ type Product = {
   compare_at_price?: number | string | null;
   free_shipping?: boolean;
   images?: ProductImage[];
+  colors?: string[];
+  sizes?: string[];
 };
 
 function currencyBRL(n: any): string {
@@ -31,6 +33,8 @@ function getImageUrl(u?: string | null): string | undefined {
 
 export default function ProductDetailClient({ product }: { product: Product }) {
   const [qty, setQty] = useState(1);
+  const [selectedColor, setSelectedColor] = useState<string | null>(null);
+  const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const primary = (product.images || []).find((i) => i?.is_primary) || (product.images || [])[0];
   const image = getImageUrl(primary?.url || undefined);
 
@@ -39,12 +43,29 @@ export default function ProductDetailClient({ product }: { product: Product }) {
       const raw = localStorage.getItem("cart_items");
       const prev = raw ? JSON.parse(raw) : [];
       const price = Number(product.price || 0);
+      // Exigir seleção se o produto possui variações
+      if ((product.colors && product.colors.length > 0) && !selectedColor) {
+        alert("Selecione uma cor antes de adicionar à sacola.");
+        return;
+      }
+      if ((product.sizes && product.sizes.length > 0) && !selectedSize) {
+        alert("Selecione um tamanho antes de adicionar à sacola.");
+        return;
+      }
       const existing = Array.isArray(prev) ? prev.find((it: any) => it.productId === product.id) : null;
       let next;
       if (existing) {
         next = prev.map((it: any) => it.productId === product.id ? { ...it, qty: it.qty + q } : it);
       } else {
-        next = [...(Array.isArray(prev) ? prev : []), { productId: product.id, title: product.title, price, image, qty: q }];
+        next = [...(Array.isArray(prev) ? prev : []), {
+          productId: product.id,
+          title: product.title,
+          price,
+          image,
+          qty: q,
+          color: selectedColor || undefined,
+          size: selectedSize || undefined,
+        }];
       }
       localStorage.setItem("cart_items", JSON.stringify(next));
     } catch {}
@@ -52,6 +73,8 @@ export default function ProductDetailClient({ product }: { product: Product }) {
 
   useEffect(() => {
     setQty(1);
+    setSelectedColor(null);
+    setSelectedSize(null);
   }, [product?.id]);
 
   return (
@@ -67,6 +90,54 @@ export default function ProductDetailClient({ product }: { product: Product }) {
       {product.free_shipping && (
         <span className="inline-block rounded bg-primary/20 px-2 py-1 text-xs text-primary">Frete grátis</span>
       )}
+
+      {/* Seleção de cores */}
+      {(product.colors && product.colors.length > 0) && (
+        <div>
+          <div className="mb-1 text-sm font-medium">Cor</div>
+          <div className="flex flex-wrap gap-2">
+            {product.colors.map((c) => {
+              const active = selectedColor === c;
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setSelectedColor(c)}
+                  className={`inline-flex items-center gap-2 rounded-md border px-3 py-1 text-xs ${active ? "border-primary bg-primary/30" : "hover:border-primary"}`}
+                  aria-pressed={active}
+                >
+                  <span className="inline-block h-3 w-3 rounded-full border" style={{ backgroundColor: /^#|rgb|hsl/i.test(c) ? c : undefined }} />
+                  <span>{c}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Seleção de tamanhos */}
+      {(product.sizes && product.sizes.length > 0) && (
+        <div>
+          <div className="mb-1 text-sm font-medium">Tamanho</div>
+          <div className="flex flex-wrap gap-2">
+            {product.sizes.map((s) => {
+              const active = selectedSize === s;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setSelectedSize(s)}
+                  className={`inline-flex items-center rounded-md border px-3 py-1 text-xs ${active ? "border-primary bg-primary/30" : "hover:border-primary"}`}
+                  aria-pressed={active}
+                >
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center gap-2">
         <button onClick={() => setQty((q) => Math.max(1, q - 1))} className="rounded border px-2 py-1 text-xs">-</button>
         <span className="text-sm">{qty}</span>

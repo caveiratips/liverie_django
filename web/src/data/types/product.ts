@@ -10,6 +10,8 @@ export interface Product {
   brand?: string;
   compare_at_price?: number;
   free_shipping?: boolean;
+  colors?: string[];
+  sizes?: string[];
 }
 
 export interface ProductImage {
