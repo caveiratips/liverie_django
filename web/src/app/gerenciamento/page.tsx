@@ -140,7 +140,7 @@ function ProductsAdmin() {
   const [length, setLength] = useState("");
   const [taxable, setTaxable] = useState(true);
   const [tags, setTags] = useState("");
-  const [colors, setColors] = useState<string[]>([]);
+  const [colors, setColors] = useState<Array<{ name: string; hex: string }>>([]);
   const [sizes, setSizes] = useState("");
   const [seoTitle, setSeoTitle] = useState("");
   const [seoDescription, setSeoDescription] = useState("");
@@ -424,7 +424,7 @@ function ProductsAdmin() {
         length: lNum,
         taxable,
         tags,
-        available_colors: (colors || []).join(", "),
+        available_colors: (colors || []).map((c) => `${(c.name || '').trim()}|${c.hex || '#000000'}`).join(", "),
         available_sizes: sizes,
         seo_title: seoTitle,
         seo_description: seoDescription,
@@ -511,12 +511,31 @@ function ProductsAdmin() {
     setLength(p.length != null ? formatDecimal3Input(String(p.length)) : "");
     setTaxable(Boolean(p.taxable));
     setTags(p.tags || "");
-    const colorsArr = Array.isArray(p.colors)
-      ? p.colors
+    const colorsArr: Array<{ name: string; hex: string }> = Array.isArray(p.colors)
+      ? p.colors.map((c: any) => {
+          if (typeof c === "string") {
+            const s = c.trim();
+            const pair = s.includes("|") ? s.split("|", 2) : (s.includes(":") ? s.split(":", 2) : null);
+            if (pair && pair.length === 2) {
+              return { name: (pair[0] || "").trim(), hex: (pair[1] || "").trim() || "#000000" };
+            }
+            const isHex = /^#|rgb|hsl/i.test(s);
+            return { name: s, hex: isHex ? s : "#000000" };
+          }
+          return { name: (c?.name || "").trim(), hex: (c?.hex || "#000000").trim() };
+        })
       : String(p.available_colors || "")
           .split(/[;,]/)
           .map((s: string) => s.trim())
-          .filter(Boolean);
+          .filter(Boolean)
+          .map((s: string) => {
+            const pair = s.includes("|") ? s.split("|", 2) : (s.includes(":") ? s.split(":", 2) : null);
+            if (pair && pair.length === 2) {
+              return { name: (pair[0] || "").trim(), hex: (pair[1] || "").trim() || "#000000" };
+            }
+            const isHex = /^#|rgb|hsl/i.test(s);
+            return { name: s, hex: isHex ? s : "#000000" };
+          });
     const sizesCsv = Array.isArray(p.sizes) ? p.sizes.join(", ") : (p.available_sizes || "");
     setColors(colorsArr || []);
     setSizes(sizesCsv || "");
@@ -592,18 +611,27 @@ function ProductsAdmin() {
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input placeholder="Tags (separadas por vírgula)" value={tags} onChange={(e) => setTags(e.target.value)} />
-          {/* Paleta de cores (múltiplas) */}
+          {/* Paleta de cores com nome */}
           <div>
-            <div className="mb-1 text-sm">Cores (paleta)</div>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="mb-1 text-sm">Cores (nome + paleta)</div>
+            <div className="flex flex-col gap-2">
               {colors.map((c, idx) => (
                 <div key={idx} className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(c) ? c : "#000000"}
+                  <Input
+                    placeholder="Nome da cor (ex: Denim)"
+                    value={c.name}
                     onChange={(e) => {
                       const next = [...colors];
-                      next[idx] = e.target.value;
+                      next[idx] = { ...next[idx], name: e.target.value };
+                      setColors(next);
+                    }}
+                  />
+                  <input
+                    type="color"
+                    value={/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(c.hex) ? c.hex : "#000000"}
+                    onChange={(e) => {
+                      const next = [...colors];
+                      next[idx] = { ...next[idx], hex: e.target.value };
                       setColors(next);
                     }}
                   />
@@ -623,12 +651,12 @@ function ProductsAdmin() {
               <button
                 type="button"
                 className="rounded-md border px-2 py-1 text-xs"
-                onClick={() => setColors([...(colors || []), "#000000"]) }
+                onClick={() => setColors([...(colors || []), { name: "", hex: "#000000" }]) }
               >
                 + Adicionar cor
               </button>
             </div>
-            <div className="mt-1 text-xs text-zinc-500">As cores escolhidas serão exibidas como swatches na página do produto.</div>
+            <div className="mt-1 text-xs text-zinc-500">Informe o nome da cor e escolha a paleta; será exibido na página do produto.</div>
           </div>
           <Input placeholder="Tamanhos (separados por vírgula)" value={sizes} onChange={(e) => setSizes(e.target.value)} />
           <label className="flex items-center gap-2 text-sm">

@@ -15,14 +15,28 @@ function getImageUrl(u?: string | null): string | undefined {
 export function ProductPage({ product }: { product: Product }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-4">
-          <Link href="/loja" className="text-2xl font-bold text-primary">Sua Loja</Link>
-          <div className="ml-auto">
-            <Link href="/loja" className="text-sm hover:text-primary">Voltar para loja</Link>
-          </div>
+      {/* Breadcrumb */}
+      <nav className="border-b">
+        <div className="mx-auto max-w-6xl px-4 py-3 text-sm text-zinc-700">
+          <ol className="flex items-center gap-2">
+            <li>
+              <Link href="/loja" className="underline hover:text-primary">Loja</Link>
+            </li>
+            {product.category && (
+              <>
+                <span>›</span>
+                <li>
+                  <Link href={`/loja?c=${encodeURIComponent(product.category.slug)}`} className="underline hover:text-primary">
+                    {product.category.name}
+                  </Link>
+                </li>
+              </>
+            )}
+            <span>›</span>
+            <li className="text-black">{product.title}</li>
+          </ol>
         </div>
-      </header>
+      </nav>
       <main className="mx-auto max-w-6xl px-4 py-8">
         <div className="grid gap-6 sm:grid-cols-2">
           <ProductGallery images={product.images} title={product.title} />

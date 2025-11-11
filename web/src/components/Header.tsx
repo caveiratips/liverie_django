@@ -1,78 +1,76 @@
-import { Search, ShoppingCart, User } from 'lucide-react'
-import Image from 'next/image'
-import Link from 'next/link'
+"use client";
+
+import { Search, ShoppingCart, User } from 'lucide-react';
+import Image from 'next/image';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+
+type Category = { id: number; name: string; slug: string };
 
 export function Header() {
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  useEffect(() => {
+    fetch('/api/categories', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setCategories(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
+
   return (
     <header className="bg-white shadow-md">
-      <div className="bg-green-800 text-white text-center py-2 text-sm">
-        <span>CUPOM DE PRIMEIRA COMPRA: &quot;CHEGUEI&quot;</span>
+      {/* Top info bar, now in green C9DAC7 */}
+      <div className="text-black text-center py-2 text-sm" style={{ backgroundColor: '#C9DAC7' }}>
+        <span>10% OFF* NA PRIMEIRA COMPRA</span>
         <span className="mx-4">|</span>
-        <span>4X SEM JUROS PIX PARCELADO</span>
+        <span>CUPOUM: “CHEGUEI” • PIX PARCELADO</span>
       </div>
-      <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-        <div className="flex items-center space-x-4">
-          <button className="text-gray-600">
-            <Search className="h-6 w-6" />
-          </button>
+      {/* Main bar */}
+      <div className="mx-auto max-w-6xl px-4 py-4 flex justify-between items-center">
+        <div className="flex items-center space-x-3">
+          <Search className="h-5 w-5 text-zinc-700" />
           <input
             type="text"
             placeholder="O que você procura?"
-            className="border-b-2 border-gray-300 focus:border-green-500 outline-none"
+            className="border-b-2 border-zinc-300 focus:border-zinc-800 outline-none text-sm w-64"
           />
         </div>
         <div className="flex-1 flex justify-center">
-          <Link href="/">
-            <Image
-              src="/next.svg"
-              alt="LIEBE"
-              width={120}
-              height={40}
-              className="h-10"
-            />
+          <Link href="/loja" prefetch className="select-none">
+            <span
+              className="uppercase font-semibold tracking-wide text-2xl sm:text-3xl"
+              style={{ color: '#C9DAC7' }}
+            >
+              Liverie
+            </span>
           </Link>
         </div>
-        <div className="flex items-center space-x-4">
-          <Link href="/login" className="text-gray-600">
+        <div className="flex items-center gap-4 text-zinc-700">
+          <Link href="/login" className="hover:text-zinc-900" prefetch>
             <User className="h-6 w-6" />
           </Link>
-          <Link href="/carrinho" className="text-gray-600">
+          <Link href="/loja?openCart=1" className="hover:text-zinc-900">
             <ShoppingCart className="h-6 w-6" />
           </Link>
         </div>
       </div>
-      <nav className="container mx-auto px-4 pb-4 flex justify-center space-x-8 text-sm text-gray-600">
-        <Link href="/queridinhos" className="hover:text-green-500">
-          QUERIDINHOS
-        </Link>
-        <Link href="/novidades" className="hover:text-green-500">
-          NOVIDADES
-        </Link>
-        <Link href="/sutia" className="hover:text-green-500">
-          SUTIÃ
-        </Link>
-        <Link href="/calcinha" className="hover:text-green-500">
-          CALCINHA
-        </Link>
-        <Link href="/body" className="hover:text-green-500">
-          BODY
-        </Link>
-        <Link href="/modelador" className="hover:text-green-500">
-          MODELADOR
-        </Link>
-        <Link href="/acessorios" className="hover:text-green-500">
-          ACESSÓRIOS
-        </Link>
-        <Link href="/linha-noite" className="hover:text-green-500">
-          LINHA NOITE
-        </Link>
-        <Link href="/plus" className="hover:text-green-500">
-          PLUS
-        </Link>
-        <Link href="/black-sale" className="hover:text-green-500">
-          BLACK SALE
-        </Link>
+      {/* Categories from Admin */}
+      <nav className="mx-auto max-w-6xl px-4 pb-4 flex justify-center space-x-6 text-sm text-zinc-700">
+        {categories.length === 0 ? (
+          <span className="text-zinc-500">Nenhuma categoria cadastrada</span>
+        ) : (
+          categories.map((c) => (
+            <Link
+              key={c.id}
+              href={`/loja?c=${encodeURIComponent(c.slug)}`}
+              className="font-semibold text-zinc-800 hover:text-[#C9DAC7] hover:underline transition-colors"
+              prefetch
+            >
+              {c.name}
+            </Link>
+          ))
+        )}
       </nav>
     </header>
-  )
+  );
 }

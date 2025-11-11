@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Heart, LogIn, LogOut, ShoppingBag, ShoppingCart, CreditCard } from "lucide-react";
+import { Heart, LogIn, LogOut, ShoppingBag, ShoppingCart, CreditCard, Truck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useForm } from "react-hook-form";
@@ -14,6 +14,7 @@ type Product = {
   id: number;
   title: string;
   slug: string;
+  category?: { id: number; name: string; slug: string } | null;
   brand?: string | null;
   price: number | string;
   compare_at_price?: number | string | null;
@@ -44,6 +45,7 @@ export default function LojaPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [categorySlug, setCategorySlug] = useState<string | null>(null);
   const [session, setSession] = useState<{
     logged_in: boolean;
     username: string | null;
@@ -74,6 +76,14 @@ export default function LojaPage() {
       .then((data) => setProducts(Array.isArray(data) ? data : []))
       .catch((e) => setError(e?.message || "Erro ao carregar produtos"))
       .finally(() => setLoading(false));
+  }, []);
+
+  // Lê categoria da URL (?c=slug)
+  useEffect(() => {
+    try {
+      const usp = new URLSearchParams(window.location.search);
+      setCategorySlug(usp.get("c"));
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -174,31 +184,19 @@ export default function LojaPage() {
 
   const filtered = products.filter((p) => {
     const q = query.trim().toLowerCase();
-    if (!q) return true;
-    return (
-      (p.title || "").toLowerCase().includes(q) ||
-      (p.brand || "").toLowerCase().includes(q)
-    );
+    const matchesQuery = !q || (p.title || "").toLowerCase().includes(q) || (p.brand || "").toLowerCase().includes(q);
+    const matchesCategory = !categorySlug || (p.category?.slug === categorySlug);
+    return matchesQuery && matchesCategory;
   });
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <TopBar />
-      <Header
-        query={query}
-        setQuery={setQuery}
-        session={session}
-        onOpenLogin={() => setShowLogin(true)}
-        onOpenCadastro={() => setShowCadastro(true)}
-        onOpenCart={() => { setStartCheckoutStep(session?.logged_in ? 1 : 0); setShowCart(true); }}
-        cartCount={cartItems.reduce((sum, it) => sum + it.qty, 0)}
-      />
-      <NavBar categories={categories} />
+      {/* Topo e navegação são globais via AppChrome/Header */}
       <Banner />
       <section className="mx-auto max-w-6xl px-4 py-8">
-        <h2 className="mb-4 text-xl font-semibold text-primary">Produtos</h2>
+        <h2 className="mb-4 text-xl font-semibold text-[#3F5F4F]">Produtos</h2>
         {loading ? (
-          <div className="text-sm text-zinc-600">Carregando produtos...</div>
+          <div className="text-sm text-[#3F5F4F]/80">Carregando produtos...</div>
         ) : error ? (
           <div className="text-sm text-red-600">{error}</div>
         ) : (
@@ -209,7 +207,7 @@ export default function LojaPage() {
         <section className="mx-auto max-w-6xl px-4 pb-12">
           <h2 className="mb-4 text-xl font-semibold text-primary">Meus pedidos</h2>
           {orders.length === 0 ? (
-            <div className="text-sm text-zinc-600">Você ainda não tem pedidos.</div>
+            <div className="text-sm text-[#3F5F4F]/80">Você ainda não tem pedidos.</div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               {orders.map((o) => (
@@ -226,7 +224,7 @@ export default function LojaPage() {
                       } as any)[o.status] || o.status}
                     </span>
                   </div>
-                  <div className="mt-2 text-xs text-zinc-600">
+                  <div className="mt-2 text-xs text-[#3F5F4F]/70">
                     {new Date(o.created_at).toLocaleString("pt-BR")}
                   </div>
                   <ul className="mt-3 space-y-2 text-sm">
@@ -238,7 +236,7 @@ export default function LojaPage() {
                     ))}
                   </ul>
                   {o.items.length > 3 && (
-                    <div className="mt-1 text-xs text-zinc-500">+{o.items.length - 3} itens</div>
+                    <div className="mt-1 text-xs text-[#3F5F4F]/70">+{o.items.length - 3} itens</div>
                   )}
                   <div className="mt-3 flex items-center justify-between">
                     <span className="text-sm">Total</span>
@@ -250,7 +248,7 @@ export default function LojaPage() {
           )}
         </section>
       )}
-      <Footer />
+      {/* Rodapé global via AppChrome/Footer */}
 
       {showLogin && (
         <LoginModal
@@ -278,6 +276,7 @@ export default function LojaPage() {
           setItems={setCartItems}
           startStep={startCheckoutStep}
           onClose={() => setShowCart(false)}
+          onOpenCadastro={() => { setShowCart(false); setShowCadastro(true); }}
           session={session}
         />
       )}
@@ -404,7 +403,7 @@ function Banner() {
             <h2 className="text-2xl font-semibold">
               Outubro está recheado de promoções!
             </h2>
-            <p className="mt-2 text-sm text-zinc-600">
+            <p className="mt-2 text-sm text-[#3F5F4F]/80">
               Nas compras acima de R$350 com produto infantil, ganhe um brinde!
             </p>
             <a
@@ -428,7 +427,7 @@ function ProductGrid({ products, onAdd, onBuy }: { products: Product[]; onAdd: (
         <ProductCard key={p.id} p={p} onAdd={() => onAdd(p)} onBuy={() => onBuy(p)} />
       ))}
       {products.length === 0 && (
-        <div className="col-span-full text-center text-sm text-zinc-600">
+        <div className="col-span-full text-center text-sm text-[#3F5F4F]/80">
           Nenhum produto disponível
         </div>
       )}
@@ -452,7 +451,7 @@ function ProductCard({ p, onAdd, onBuy }: { p: Product; onAdd: () => void; onBuy
               className="h-full w-full object-cover"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">
+            <div className="flex h-full w-full items-center justify-center text-sm text-[#3F5F4F]/70">
               Sem imagem
             </div>
           )}
@@ -463,22 +462,23 @@ function ProductCard({ p, onAdd, onBuy }: { p: Product; onAdd: () => void; onBuy
         <div className="flex items-center gap-2">
           <span className="text-base font-semibold">{currencyBRL(p.price)}</span>
           {onSale && (
-            <span className="text-xs text-zinc-500 line-through">
+            <span className="text-xs text-[#3F5F4F]/70 line-through">
               {currencyBRL(p.compare_at_price)}
             </span>
           )}
         </div>
         {p.free_shipping && (
-          <span className="inline-block rounded bg-primary/20 px-2 py-1 text-xs text-primary">
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#C9DAC7] px-3 py-1 text-xs text-[#3F5F4F]">
+            <Truck size={12} />
             Frete grátis
           </span>
         )}
         <div className="mt-3 flex gap-2">
-          <button onClick={onAdd} className="flex-1 rounded-md border px-3 py-2 text-xs hover:border-primary hover:text-primary inline-flex items-center justify-center gap-1.5">
+          <button onClick={onAdd} className="flex-1 rounded-md border px-3 py-2 text-xs inline-flex items-center justify-center gap-1.5 border-[#C9DAC7] text-[#3F5F4F] hover:bg-[#BFD5C8] hover:border-[#BFD5C8] transition-colors">
             <ShoppingCart size={16} />
             Adicionar
           </button>
-          <button onClick={onBuy} className="flex-1 rounded-md bg-rose-200 px-3 py-2 text-xs font-medium text-rose-900 hover:bg-rose-300 inline-flex items-center justify-center gap-1.5">
+          <button onClick={onBuy} className="flex-1 rounded-md px-3 py-2 text-xs font-semibold bg-[#C9DAC7] text-[#3F5F4F] hover:bg-[#BFD5C8] transition-colors inline-flex items-center justify-center gap-1.5">
             <CreditCard size={16} />
             Comprar
           </button>
@@ -494,7 +494,7 @@ function Footer() {
       <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 sm:grid-cols-3">
         <div>
           <h4 className="text-sm font-semibold text-primary">Sobre a Loja</h4>
-          <ul className="mt-2 space-y-1 text-sm text-zinc-600">
+          <ul className="mt-2 space-y-1 text-sm text-[#3F5F4F]/80">
             <li>História</li>
             <li>Nossas lojas</li>
             <li>Trabalhe conosco</li>
@@ -503,7 +503,7 @@ function Footer() {
         </div>
         <div>
           <h4 className="text-sm font-semibold text-primary">Ajuda & Suporte</h4>
-          <ul className="mt-2 space-y-1 text-sm text-zinc-600">
+          <ul className="mt-2 space-y-1 text-sm text-[#3F5F4F]/80">
             <li>Troca e devolução</li>
             <li>Política de privacidade</li>
             <li>Pagamento</li>
@@ -512,7 +512,7 @@ function Footer() {
         </div>
         <div>
           <h4 className="text-sm font-semibold text-primary">Central de Atendimento</h4>
-          <ul className="mt-2 space-y-1 text-sm text-zinc-600">
+          <ul className="mt-2 space-y-1 text-sm text-[#3F5F4F]/80">
             <li>SAC: (11) 91166-4422</li>
             <li>WhatsApp: (11) 93339-9745</li>
             <li>Email: ecommerce@exemplo.com</li>
@@ -520,7 +520,7 @@ function Footer() {
         </div>
       </div>
       <div className="border-t">
-        <div className="mx-auto max-w-6xl px-4 py-6 text-xs text-zinc-600">
+        <div className="mx-auto max-w-6xl px-4 py-6 text-xs text-[#3F5F4F]/70">
           Copyright © {new Date().getFullYear()} • Todos os direitos reservados.
         </div>
       </div>
@@ -583,14 +583,14 @@ function LoginModal({ onClose, onOpenCadastro, onLoggedIn }: { onClose: () => vo
     <Modal open={true} onClose={onClose}>
       <div className="mx-auto max-w-md">
         <h2 className="text-lg font-semibold">Entrar</h2>
-        <p className="text-xs text-zinc-600">Use seu email e senha para acessar.</p>
+        <p className="text-xs text-[#3F5F4F]/70">Use seu email e senha para acessar.</p>
         <form onSubmit={onSubmit} className="mt-4 grid gap-4">
           <div>
-            <label className="mb-1 block text-sm">Email</label>
+            <label className="mb-1 block text-sm text-[#3F5F4F]">Email</label>
             <Input type="email" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="voce@exemplo.com" />
           </div>
           <div>
-            <label className="mb-1 block text-sm">Senha</label>
+            <label className="mb-1 block text-sm text-[#3F5F4F]">Senha</label>
             <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
           </div>
           {error && <p className="text-xs text-red-600">{error}</p>}
@@ -611,7 +611,7 @@ function LoginModal({ onClose, onOpenCadastro, onLoggedIn }: { onClose: () => vo
   );
 }
 
-function CartModal({ items, setItems, startStep, onClose, session }: { items: { productId: number; title: string; price: number; image?: string; qty: number }[]; setItems: (fn: (prev: any) => any) => void; startStep?: 0 | 1 | 2 | 3 | 4 | 5; onClose: () => void; session: { logged_in: boolean; username: string | null; name: string | null; address?: { cep: string; endereco: string; numero: string; complemento?: string; bairro: string; cidade: string; estado: string } | null; addresses?: { id: number; label?: string; cep: string; endereco: string; numero: string; complemento?: string; bairro: string; cidade: string; estado: string; is_default_delivery?: boolean }[]; defaultDeliveryAddressId?: number | null } | null }) {
+function CartModal({ items, setItems, startStep, onClose, onOpenCadastro, session }: { items: { productId: number; title: string; price: number; image?: string; qty: number }[]; setItems: (fn: (prev: any) => any) => void; startStep?: 0 | 1 | 2 | 3 | 4 | 5; onClose: () => void; onOpenCadastro: () => void; session: { logged_in: boolean; username: string | null; name: string | null; address?: { cep: string; endereco: string; numero: string; complemento?: string; bairro: string; cidade: string; estado: string } | null; addresses?: { id: number; label?: string; cep: string; endereco: string; numero: string; complemento?: string; bairro: string; cidade: string; estado: string; is_default_delivery?: boolean }[]; defaultDeliveryAddressId?: number | null } | null }) {
   const steps = ["Login", "Sacola", "Endereço", "Frete", "Pagamento", "Finalizar"] as const;
   const [step, setStep] = useState<0 | 1 | 2 | 3 | 4 | 5>(startStep ?? (session?.logged_in ? 1 : 0));
   const [loggedIn, setLoggedIn] = useState<boolean>(!!session?.logged_in);
@@ -766,6 +766,45 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
   const [boletoCpf, setBoletoCpf] = useState<string>("");
   const [orderConfirmed, setOrderConfirmed] = useState<boolean>(false);
 
+  // Validações de fluxo por etapa (dinamiza e impede avançar sem concluir a atual)
+  function isCartValid() { return !!loggedIn && items.length > 0; }
+  function isAddressValid() {
+    if (!loggedIn) return false;
+    if (selectedAddressId != null) return true;
+    if (showNewAddressForm) {
+      const cepOk = onlyDigits(address.cep || "").length === 8;
+      const obrigatorios = [address.endereco, address.numero, address.bairro, address.cidade, address.estado];
+      const filled = obrigatorios.every((v) => !!String(v || "").trim());
+      return cepOk && filled;
+    }
+    return false;
+  }
+  function isShippingValid() { return isAddressValid() && !!shippingMethod?.key; }
+  function isPaymentValid() {
+    if (!isShippingValid()) return false;
+    if (paymentMethod === "pix") return true;
+    if (paymentMethod === "cartao") {
+      const numOk = onlyDigits(card.numero || "").length >= 13;
+      const nomeOk = !!(card.nome || "").trim();
+      const valOk = !!(card.validade || "").trim();
+      const cvvOk = onlyDigits(card.cvv || "").length >= 3;
+      return numOk && nomeOk && valOk && cvvOk;
+    }
+    if (paymentMethod === "boleto") {
+      return onlyDigits(boletoCpf || "").length === 11;
+    }
+    return false;
+  }
+  function maxAllowedStep(): 0 | 1 | 2 | 3 | 4 | 5 {
+    if (!loggedIn) return 0;
+    if (!isCartValid()) return 1;
+    if (!isAddressValid()) return 2;
+    if (!isShippingValid()) return 3;
+    if (!isPaymentValid()) return 4;
+    return 5;
+  }
+  const allowedStep = maxAllowedStep();
+
   async function finalizeOrder() {
     setError(null);
     const selected = addresses.find((a: any) => a.id === selectedAddressId) || address;
@@ -827,8 +866,8 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
     <Modal open={true} onClose={onClose}>
       <div className="mx-auto max-w-2xl">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Checkout</h2>
-          <div className="flex items-center gap-2 text-rose-600">
+          <h2 className="text-lg font-semibold text-[#3F5F4F]">Checkout</h2>
+          <div className="flex items-center gap-2 text-[#3F5F4F]">
             <Heart size={18} />
             <span className="text-xs">Um toque de carinho para você</span>
           </div>
@@ -839,13 +878,14 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
             {steps.map((label, idx) => (
               <div key={label} className="flex items-center gap-2">
                 <button
-                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 ${idx <= step ? "bg-rose-200 text-rose-900" : "bg-muted text-zinc-600"}`}
-                  onClick={() => setStep(idx as 0 | 1 | 2 | 3 | 4 | 5)}
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 ${idx <= step ? "bg-[#C9DAC7] text-[#3F5F4F]" : "bg-muted text-[#3F5F4F]/80"} ${idx > allowedStep ? "opacity-60 cursor-not-allowed" : ""}`}
+                  onClick={() => { if (idx <= allowedStep) setStep(idx as 0 | 1 | 2 | 3 | 4 | 5); }}
+                  disabled={idx > allowedStep}
                 >
                   <span className="font-medium">{idx + 1}</span>
                   <span>{label}</span>
                 </button>
-                {idx < steps.length - 1 && <span className={`h-px w-8 ${idx < step ? "bg-rose-300" : "bg-muted"}`} />}
+                {idx < steps.length - 1 && <span className={`h-px w-8 ${idx < step ? "bg-[#BFD5C8]" : "bg-muted"}`} />}
               </div>
             ))}
           </div>
@@ -863,15 +903,16 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                   ) : (
                     <form onSubmit={onLoginSubmit} className="mx-auto max-w-md grid gap-3">
                       <div>
-                        <label className="mb-1 block text-sm">Email</label>
+            <label className="mb-1 block text-sm text-[#3F5F4F]">Email</label>
                         <Input type="email" value={loginUser} onChange={(e) => setLoginUser(e.target.value)} placeholder="voce@exemplo.com" />
                       </div>
                       <div>
-                        <label className="mb-1 block text-sm">Senha</label>
+            <label className="mb-1 block text-sm text-[#3F5F4F]">Senha</label>
                         <Input type="password" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} placeholder="••••••••" />
                       </div>
                       {loginError && <p className="text-xs text-red-600">{loginError}</p>}
-                      <div className="flex justify-end">
+                      <div className="flex items-center justify-between">
+                        <button type="button" className="text-sm hover:text-primary" onClick={onOpenCadastro}>Cadastrar-se</button>
                         <Button className="bg-primary text-black" type="submit" disabled={loginLoading}>
                           {loginLoading ? "Entrando..." : (
                             <span className="inline-flex items-center gap-1.5"><LogIn size={16} /> Entrar</span>
@@ -882,7 +923,7 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                   )}
                   <div className="mt-4 flex justify-between">
                     <button onClick={() => setStep(1)} className="text-xs hover:text-primary">Ir para sacola</button>
-                    <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(2)} disabled={!loggedIn}>Ir para endereço</Button>
+                    <Button className="bg-[#C9DAC7] text-[#3F5F4F] hover:bg-[#BFD5C8] transition-colors disabled:opacity-60 disabled:cursor-not-allowed" onClick={() => setStep(2)} disabled={!loggedIn}>Ir para endereço</Button>
                   </div>
                 </div>
               )}
@@ -892,13 +933,13 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
             <div className="w-1/6 px-1">
               {step === 1 && (
                 <div className="space-y-3">
-                  {items.length === 0 && <p className="text-sm text-zinc-600">Sua sacola está vazia.</p>}
+                  {items.length === 0 && <p className="text-sm text-[#3F5F4F]/80">Sua sacola está vazia.</p>}
                   {items.map((it) => (
                     <div key={it.productId} className="flex items-center gap-3 rounded border p-3">
                       <div className="h-14 w-14 rounded bg-muted" style={{ backgroundImage: it.image ? `url(${it.image})` : undefined, backgroundSize: "cover" }} />
                       <div className="flex-1">
                         <div className="text-sm font-medium">{it.title}</div>
-                        <div className="text-xs text-zinc-600">{currencyBRL(it.price)}</div>
+                        <div className="text-xs text-[#3F5F4F]/70">{currencyBRL(it.price)}</div>
                       </div>
                       <div className="flex items-center gap-2">
                         <button onClick={() => dec(it.productId)} className="rounded border px-2 py-1 text-xs">-</button>
@@ -913,7 +954,7 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                     <span className="font-semibold text-rose-600">{currencyBRL(total)}</span>
                   </div>
                   <div className="flex justify-end gap-2">
-                    <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(2)} disabled={items.length === 0 || !loggedIn}>Continuar</Button>
+                    <Button className="bg-[#C9DAC7] text-[#3F5F4F] hover:bg-[#BFD5C8] transition-colors disabled:opacity-60 disabled:cursor-not-allowed" onClick={() => setStep(2)} disabled={!isCartValid()}>Continuar</Button>
                   </div>
                 </div>
               )}
@@ -925,7 +966,7 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                 <div className="space-y-3">
                   {Array.isArray(addresses) && addresses.length > 0 && (
                     <div className="space-y-2">
-                      <div className="text-sm font-medium">Selecione um endereço de entrega</div>
+                    <div className="text-sm font-medium text-[#3F5F4F]">Selecione um endereço de entrega</div>
                       <div className="space-y-2">
                          {addresses.map((a: any) => (
                            <div key={a.id} className="flex items-center gap-2 rounded border p-2 text-xs">
@@ -961,13 +1002,13 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                          ))}
                       </div>
                       {Array.isArray(addresses) && addresses.length > 0 && !selectedAddressId && (
-                        <p className="text-xs text-zinc-600">Selecione um endereço para continuar.</p>
+                        <p className="text-xs text-[#3F5F4F]/70">Selecione um endereço para continuar.</p>
                       )}
                       <div className="flex justify-between">
                         <button onClick={() => setShowNewAddressForm((v) => !v)} className="text-xs hover:text-primary">
                           {showNewAddressForm ? "Cancelar novo endereço" : "Cadastrar novo endereço"}
                         </button>
-                        <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(3)} disabled={!loggedIn || !selectedAddressId}>Usar este endereço</Button>
+                      <Button className="bg-[#C9DAC7] text-[#3F5F4F] hover:bg-[#BFD5C8] transition-colors disabled:opacity-60 disabled:cursor-not-allowed" onClick={() => setStep(3)} disabled={!loggedIn || !selectedAddressId}>Usar este endereço</Button>
                       </div>
                     </div>
                   )}
@@ -980,12 +1021,12 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                     )}
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                       <div className="sm:col-span-1">
-                        <label className="mb-1 block text-sm">CEP</label>
+                      <label className="mb-1 block text-sm text-[#3F5F4F]">CEP</label>
                         <Input value={address.cep} onChange={(e) => setAddress({ ...address, cep: formatCEP(e.target.value) })} onBlur={lookupCEP} placeholder="00000-000" />
-                        {cepLoading && <p className="mt-1 text-xs text-zinc-600">Buscando endereço...</p>}
+                        {cepLoading && <p className="mt-1 text-xs text-[#3F5F4F]/70">Buscando endereço...</p>}
                       </div>
                       <div className="sm:col-span-2">
-                        <label className="mb-1 block text-sm">Endereço</label>
+                      <label className="mb-1 block text-sm text-[#3F5F4F]">Endereço</label>
                         <Input value={address.endereco} onChange={(e) => setAddress({ ...address, endereco: e.target.value })} placeholder="Rua Exemplo" />
                       </div>
                     </div>
@@ -994,19 +1035,19 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                   {showNewAddressForm && (
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                     <div>
-                      <label className="mb-1 block text-sm">Número</label>
+                      <label className="mb-1 block text-sm text-[#3F5F4F]">Número</label>
                       <Input value={address.numero} onChange={(e) => setAddress({ ...address, numero: e.target.value })} placeholder="123" />
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm">Complemento</label>
+                      <label className="mb-1 block text-sm text-[#3F5F4F]">Complemento</label>
                       <Input value={address.complemento} onChange={(e) => setAddress({ ...address, complemento: e.target.value })} placeholder="Apto, bloco, etc." />
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm">Bairro</label>
+                      <label className="mb-1 block text-sm text-[#3F5F4F]">Bairro</label>
                       <Input value={address.bairro} onChange={(e) => setAddress({ ...address, bairro: e.target.value })} placeholder="Centro" />
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm">Cidade</label>
+                      <label className="mb-1 block text-sm text-[#3F5F4F]">Cidade</label>
                       <Input value={address.cidade} onChange={(e) => setAddress({ ...address, cidade: e.target.value })} placeholder="São Paulo" />
                     </div>
                   </div>
@@ -1014,7 +1055,7 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                   {showNewAddressForm && (
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                     <div>
-                      <label className="mb-1 block text-sm">Estado (UF)</label>
+                      <label className="mb-1 block text-sm text-[#3F5F4F]">Estado (UF)</label>
                       <Input value={address.estado} onChange={(e) => setAddress({ ...address, estado: e.target.value.toUpperCase() })} placeholder="SP" />
                     </div>
                   </div>
@@ -1026,7 +1067,7 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                       {showNewAddressForm && (
                         <Button variant={"outline" as any} className="border-rose-200 text-rose-900" onClick={() => createAddress()}>Salvar endereço</Button>
                       )}
-                      <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(3)} disabled={!loggedIn}>Ir para frete</Button>
+                      <Button className="bg-[#C9DAC7] text-[#3F5F4F] hover:bg-[#BFD5C8] transition-colors disabled:opacity-60 disabled:cursor-not-allowed" onClick={() => setStep(3)} disabled={!isAddressValid()}>Ir para frete</Button>
                     </div>
                   </div>
                 </div>
@@ -1038,7 +1079,7 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
               {step === 3 && (
                 <div className="space-y-3">
                   <div className="rounded border bg-rose-50 p-3 text-sm">
-                    <div className="font-semibold">Selecione o frete</div>
+                    <div className="font-semibold text-[#3F5F4F]">Selecione o frete</div>
                     <div className="mt-2 space-y-2">
                       {shippingOptions.map((opt) => (
                         <label key={opt.key} className="flex items-center justify-between rounded border p-2 text-xs">
@@ -1050,7 +1091,7 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                               onChange={() => setShippingMethod(opt)}
                             />
                             <span className="font-medium">{opt.label}</span>
-                            <span className="text-zinc-600">{opt.eta}</span>
+                            <span className="text-[#3F5F4F]/70">{opt.eta}</span>
                           </div>
                           <span className="text-rose-900">{currencyBRL(opt.price)}</span>
                         </label>
@@ -1059,7 +1100,7 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                   </div>
                   <div className="flex justify-between">
                     <button onClick={() => setStep(2)} className="text-xs hover:text-primary">Voltar para endereço</button>
-                    <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(4)}>Ir para pagamento</Button>
+                    <Button className="bg-[#C9DAC7] text-[#3F5F4F] hover:bg-[#BFD5C8] transition-colors disabled:opacity-60 disabled:cursor-not-allowed" onClick={() => setStep(4)} disabled={!isShippingValid()}>Ir para pagamento</Button>
                   </div>
                 </div>
               )}
@@ -1070,7 +1111,7 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
               {step === 4 && (
                 <div className="space-y-4">
                   <div className="rounded border bg-rose-50 p-3 text-sm">
-                    <div className="font-semibold">Forma de pagamento</div>
+                    <div className="font-semibold text-[#3F5F4F]">Forma de pagamento</div>
                     <div className="mt-2 flex gap-2">
                       {[
                         { key: "pix", label: "PIX" },
@@ -1080,7 +1121,7 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                         <button
                           key={m.key}
                           onClick={() => setPaymentMethod(m.key as any)}
-                          className={`rounded px-3 py-1 ${paymentMethod === m.key ? "bg-rose-200 text-rose-900" : "bg-muted"}`}
+                          className={`rounded px-3 py-1 transition-colors ${paymentMethod === m.key ? "bg-[#C9DAC7] text-[#3F5F4F]" : "bg-muted"}`}
                         >
                           {m.label}
                         </button>
@@ -1092,35 +1133,35 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                     {paymentMethod === "cartao" && (
                       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="sm:col-span-2">
-                          <label className="mb-1 block text-xs">Nome impresso no cartão</label>
+                    <label className="mb-1 block text-xs text-[#3F5F4F]">Nome impresso no cartão</label>
                           <Input value={card.nome} onChange={(e) => setCard({ ...card, nome: e.target.value })} placeholder="Nome completo" />
                         </div>
                         <div>
-                          <label className="mb-1 block text-xs">Número</label>
+                    <label className="mb-1 block text-xs text-[#3F5F4F]">Número</label>
                           <Input value={card.numero} onChange={(e) => setCard({ ...card, numero: e.target.value })} placeholder="0000 0000 0000 0000" />
                         </div>
                         <div>
-                          <label className="mb-1 block text-xs">Validade</label>
+                    <label className="mb-1 block text-xs text-[#3F5F4F]">Validade</label>
                           <Input value={card.validade} onChange={(e) => setCard({ ...card, validade: e.target.value })} placeholder="MM/AA" />
                         </div>
                         <div>
-                          <label className="mb-1 block text-xs">CVV</label>
+                    <label className="mb-1 block text-xs text-[#3F5F4F]">CVV</label>
                           <Input value={card.cvv} onChange={(e) => setCard({ ...card, cvv: e.target.value })} placeholder="123" />
                         </div>
                       </div>
                     )}
                     {paymentMethod === "boleto" && (
                       <div className="mt-3">
-                        <label className="mb-1 block text-xs">CPF do pagador</label>
+                    <label className="mb-1 block text-xs text-[#3F5F4F]">CPF do pagador</label>
                         <Input value={boletoCpf} onChange={(e) => setBoletoCpf(e.target.value)} placeholder="000.000.000-00" />
-                        <p className="mt-1 text-[11px] text-zinc-600">O boleto será gerado após confirmação.</p>
+                        <p className="mt-1 text-[11px] text-[#3F5F4F]/70">O boleto será gerado após confirmação.</p>
                       </div>
                     )}
                   </div>
                   {error && <p className="text-xs text-red-600">{error}</p>}
                   <div className="flex justify-between">
                     <button onClick={() => setStep(3)} className="text-xs hover:text-primary">Voltar para frete</button>
-                    <Button className="bg-rose-200 text-rose-900" onClick={() => setStep(5)}>Continuar</Button>
+                    <Button className="bg-[#C9DAC7] text-[#3F5F4F] hover:bg-[#BFD5C8] transition-colors disabled:opacity-60 disabled:cursor-not-allowed" onClick={() => setStep(5)} disabled={!isPaymentValid()}>Continuar</Button>
                   </div>
                 </div>
               )}
@@ -1178,7 +1219,7 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                       {error && <p className="text-xs text-red-600">{error}</p>}
                       <div className="flex justify-between">
                         <button onClick={() => setStep(4)} className="text-xs hover:text-primary">Voltar para pagamento</button>
-                        <Button className="bg-rose-200 text-rose-900" onClick={finalizeOrder}>Confirmar pedido</Button>
+                        <Button className="bg-[#C9DAC7] text-[#3F5F4F] hover:bg-[#BFD5C8] transition-colors" onClick={finalizeOrder}>Confirmar pedido</Button>
                       </div>
                     </>
                   ) : (
@@ -1187,7 +1228,7 @@ function CartModal({ items, setItems, startStep, onClose, session }: { items: { 
                         <span>Pedido confirmado! Em instantes enviaremos instruções de pagamento.</span>
                       </div>
                       <div className="flex justify-end">
-                        <Button className="bg-rose-200 text-rose-900" onClick={onClose}>Fechar</Button>
+                        <Button className="bg-[#C9DAC7] text-[#3F5F4F] hover:bg-[#BFD5C8] transition-colors" onClick={onClose}>Fechar</Button>
                       </div>
                     </div>
                   )}
@@ -1379,31 +1420,31 @@ function CadastroModal({ onClose, onOpenLogin }: { onClose: () => void; onOpenLo
     <Modal open={true} onClose={onClose}>
       <div className="mx-auto max-w-2xl">
         <h2 className="text-lg font-semibold">Cadastro de Cliente</h2>
-        <p className="text-xs text-zinc-600">Preencha primeiro o CEP para auto-completar o endereço.</p>
+        <p className="text-xs text-[#3F5F4F]/70">Preencha primeiro o CEP para auto-completar o endereço.</p>
         <form onSubmit={handleSubmit(onSubmit)} className="mt-4 grid gap-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
             <div>
-              <label className="mb-1 block text-sm">Nome</label>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">Nome</label>
               <Input {...register("nome")} placeholder="Seu nome" />
               {errors.nome && <p className="mt-1 text-xs text-red-600">{errors.nome.message}</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm">Sobrenome</label>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">Sobrenome</label>
               <Input {...register("sobrenome")} placeholder="Seu sobrenome" />
               {errors.sobrenome && <p className="mt-1 text-xs text-red-600">{errors.sobrenome.message}</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm">Email</label>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">Email</label>
               <Input type="email" {...register("email")} placeholder="voce@exemplo.com" />
               {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm">Senha</label>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">Senha</label>
               <Input type="password" {...register("senha")} placeholder="••••••••" />
               {errors.senha && <p className="mt-1 text-xs text-red-600">{errors.senha.message}</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm">Confirmar senha</label>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">Confirmar senha</label>
               <Input type="password" {...register("confirmSenha")} placeholder="••••••••" />
               {errors.confirmSenha && <p className="mt-1 text-xs text-red-600">{errors.confirmSenha.message}</p>}
             </div>
@@ -1411,25 +1452,25 @@ function CadastroModal({ onClose, onOpenLogin }: { onClose: () => void; onOpenLo
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <div>
-              <label className="mb-1 block text-sm">Telefone</label>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">Telefone</label>
               <Input {...register("telefone")} placeholder="(99) 99999-9999" />
               {errors.telefone && <p className="mt-1 text-xs text-red-600">{errors.telefone.message}</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm">CEP</label>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">CEP</label>
               <Input {...register("cep")} placeholder="00000-000" onBlur={lookupCEP} />
-              {cepLoading && <p className="mt-1 text-xs text-zinc-600">Buscando endereço...</p>}
+              {cepLoading && <p className="mt-1 text-xs text-[#3F5F4F]/70">Buscando endereço...</p>}
               {(errors.cep || cepError) && (
                 <p className="mt-1 text-xs text-red-600">{errors.cep?.message || cepError}</p>
               )}
             </div>
             <div>
-              <label className="mb-1 block text-sm">Endereço</label>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">Endereço</label>
               <Input {...register("endereco")} placeholder="Rua Exemplo" />
               {errors.endereco && <p className="mt-1 text-xs text-red-600">{errors.endereco.message}</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm">Número</label>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">Número</label>
               <Input
                 {...numeroReg}
                 ref={(el) => {
@@ -1444,21 +1485,21 @@ function CadastroModal({ onClose, onOpenLogin }: { onClose: () => void; onOpenLo
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <div>
-              <label className="mb-1 block text-sm">Complemento</label>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">Complemento</label>
               <Input {...register("complemento")} placeholder="Apto, bloco, etc." />
             </div>
             <div>
-              <label className="mb-1 block text-sm">Bairro</label>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">Bairro</label>
               <Input {...register("bairro")} placeholder="Centro" />
               {errors.bairro && <p className="mt-1 text-xs text-red-600">{errors.bairro.message}</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm">Cidade</label>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">Cidade</label>
               <Input {...register("cidade")} placeholder="São Paulo" />
               {errors.cidade && <p className="mt-1 text-xs text-red-600">{errors.cidade.message}</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm">Estado (UF)</label>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">Estado (UF)</label>
               <Input {...register("estado")} placeholder="SP" />
               {errors.estado && <p className="mt-1 text-xs text-red-600">{errors.estado.message}</p>}
             </div>
@@ -1466,7 +1507,7 @@ function CadastroModal({ onClose, onOpenLogin }: { onClose: () => void; onOpenLo
 
           <div className="grid grid-cols-1 gap-3">
             <div>
-              <label className="mb-1 block text-sm">CPF</label>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">CPF</label>
               <Input {...register("cpf")} placeholder="000.000.000-00" />
               {errors.cpf && <p className="mt-1 text-xs text-red-600">{errors.cpf.message}</p>}
             </div>

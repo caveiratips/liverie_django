@@ -12,6 +12,7 @@ export interface Product {
   free_shipping?: boolean;
   colors?: string[];
   sizes?: string[];
+  category?: { id: number; name: string; slug: string } | null;
 }
 
 export interface ProductImage {
