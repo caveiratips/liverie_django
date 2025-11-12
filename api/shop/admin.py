@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, Product, CustomerProfile, CustomerAddress, Order, OrderItem
+from .models import Category, Product, CustomerProfile, CustomerAddress, Order, OrderItem, Coupon
 
 
 @admin.register(Category)
@@ -39,3 +39,10 @@ class OrderAdmin(admin.ModelAdmin):
 class OrderItemAdmin(admin.ModelAdmin):
     list_display = ("order", "title", "quantity", "unit_price")
     search_fields = ("title", "order__order_number")
+
+
+@admin.register(Coupon)
+class CouponAdmin(admin.ModelAdmin):
+    list_display = ("code", "discount_type", "value", "used_count", "max_uses", "expires_at", "active")
+    list_filter = ("discount_type", "active")
+    search_fields = ("code", "description")

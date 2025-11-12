@@ -8,7 +8,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
-from .models import Category, Product, ProductImage, SiteSetting, CustomerProfile, CustomerAddress, Order, OrderStatus
+from .models import Category, Product, ProductImage, SiteSetting, CustomerProfile, CustomerAddress, Order, OrderStatus, Coupon
 from django.utils.dateparse import parse_date
 from .serializers import (
     CategorySerializer,
@@ -21,6 +21,7 @@ from .serializers import (
     AdminOrderSerializer,
     OrderStatusSerializer,
     AdminCustomerSerializer,
+    CouponSerializer,
 )
 from .permissions import IsStaffOrReadOnly
 
@@ -283,6 +284,56 @@ class OrderStatusViewSet(viewsets.ModelViewSet):
     queryset = OrderStatus.objects.all().order_by('sort_order', 'label')
     serializer_class = OrderStatusSerializer
     permission_classes = [IsStaffOrReadOnly]
+
+
+class CouponViewSet(viewsets.ModelViewSet):
+    queryset = Coupon.objects.all().order_by('-created_at')
+    serializer_class = CouponSerializer
+    permission_classes = [IsStaffOrReadOnly]
+
+
+class ApplyCouponView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        code = str(request.data.get('code', '')).strip()
+        subtotal_raw = request.data.get('subtotal')
+        try:
+            from decimal import Decimal
+            subtotal = Decimal(str(subtotal_raw or 0))
+        except Exception:
+            subtotal = Decimal('0')
+
+        c = Coupon.objects.filter(code=code).first()
+        if not c:
+            return Response({'error': 'Cupom inválido'}, status=status.HTTP_404_NOT_FOUND)
+        if not c.is_valid():
+            return Response({'error': 'Cupom expirado ou inativo'}, status=status.HTTP_400_BAD_REQUEST)
+        if c.min_order_total:
+            try:
+                from decimal import Decimal
+                min_total = Decimal(str(c.min_order_total))
+            except Exception:
+                min_total = Decimal('0')
+            if subtotal < min_total:
+                return Response({'error': 'Subtotal abaixo do mínimo do cupom'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # calcula desconto
+        from decimal import Decimal
+        if c.discount_type == 'percent':
+            discount = (subtotal * Decimal(str(c.value))) / Decimal('100')
+        else:
+            discount = Decimal(str(c.value))
+        if discount > subtotal:
+            discount = subtotal
+
+        return Response({
+            'code': c.code,
+            'discount_amount': float(discount),
+            'discount_type': c.discount_type,
+            'value': float(c.value),
+            'expires_at': c.expires_at.isoformat() if c.expires_at else None,
+        })
 
 
 class AdminCustomerView(generics.RetrieveUpdateDestroyAPIView):

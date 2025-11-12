@@ -13,10 +13,12 @@ from .views import (
     OrderListCreateView,
     OrderViewSet,
     OrderStatusViewSet,
+    CouponViewSet,
     AdminCustomerView,
     AdminCustomerListView,
     AdminOrderByNumberView,
     AdminBannerUploadView,
+    ApplyCouponView,
 )
 
 router = DefaultRouter()
@@ -25,6 +27,7 @@ router.register(r'admin/products', ProductViewSet, basename='admin-products')
 router.register(r'admin/product-images', ProductImageViewSet, basename='admin-product-images')
 router.register(r'admin/orders', OrderViewSet, basename='admin-orders')
 router.register(r'admin/order-statuses', OrderStatusViewSet, basename='admin-order-statuses')
+router.register(r'admin/coupons', CouponViewSet, basename='admin-coupons')
 
 urlpatterns = [
     # Públicos
@@ -36,6 +39,7 @@ urlpatterns = [
     path('addresses/<int:pk>/', AddressDetailView.as_view(), name='address-detail'),
     # Pedidos do cliente (autenticado)
     path('orders/', OrderListCreateView.as_view(), name='order-list-create'),
+    path('coupons/apply/', ApplyCouponView.as_view(), name='coupon-apply'),
     path('admin/customers/', AdminCustomerListView.as_view(), name='admin-customer-list'),
     path('admin/customers/<int:pk>/', AdminCustomerView.as_view(), name='admin-customer-detail'),
     path('admin/orders/by-number/<slug:order_number>/', AdminOrderByNumberView.as_view(), name='admin-order-by-number'),

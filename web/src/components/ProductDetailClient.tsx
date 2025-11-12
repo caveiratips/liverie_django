@@ -69,6 +69,9 @@ export default function ProductDetailClient({ product }: { product: Product }) {
         }];
       }
       localStorage.setItem("cart_items", JSON.stringify(next));
+      const count = next.reduce((sum: number, it: any) => sum + (Number(it.qty) || 0), 0);
+      // Notifica cabeçalho global para atualizar badge
+      window.dispatchEvent(new CustomEvent("cart-updated", { detail: { count } }));
     } catch {}
   }
 
@@ -174,7 +177,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
       </div>
       <div className="flex gap-2">
         <button
-          onClick={() => { addToCartLocal(qty); window.location.href = "/loja?openCart=1"; }}
+          onClick={() => { addToCartLocal(qty); /* permanece na página para continuar comprando */ }}
           className="flex-1 rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary"
         >
           Adicionar à sacola

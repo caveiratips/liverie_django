@@ -26,6 +26,7 @@ function LoginForm({ onLoggedIn }: { onLoggedIn: () => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -1674,6 +1675,270 @@ function OrderStatusesAdmin() {
   );
 }
 
+function CouponsAdmin() {
+  const [items, setItems] = useState<Array<any>>([]);
+  const [form, setForm] = useState<any>({ code: "", description: "", discount_type: "percent", value: 10, max_uses: 0, min_order_total: 0, expires_at: "", active: true });
+  const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    setError(null);
+    const res = await fetch("/api/admin/coupons", { cache: "no-store" });
+    const data = res.ok ? await res.json() : [];
+    setItems(Array.isArray(data) ? data : []);
+  }
+
+  async function createCoupon() {
+    setError(null);
+    const payload = {
+      ...form,
+      code: String(form.code || "").trim(),
+      description: String(form.description || "").trim(),
+      value: Number(form.value || 0),
+      max_uses: Number(form.max_uses || 0),
+      min_order_total: Number(form.min_order_total || 0),
+      // Normaliza datetime-local vazio para null (compatível com DRF)
+      expires_at: form.expires_at ? form.expires_at : null,
+    };
+    const res = await fetch("/api/admin/coupons/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (res.ok) {
+      setForm({ code: "", description: "", discount_type: "percent", value: 10, max_uses: 0, min_order_total: 0, expires_at: "", active: true });
+      await load();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setError(d?.detail || "Erro ao criar cupom");
+    }
+  }
+
+  async function updateItem(it: any) {
+    setError(null);
+    const payload = {
+      ...it,
+      code: String(it.code || "").trim(),
+      description: String(it.description || "").trim(),
+      value: Number(it.value || 0),
+      max_uses: Number(it.max_uses || 0),
+      min_order_total: Number(it.min_order_total || 0),
+      expires_at: it.expires_at ? it.expires_at : null,
+    };
+    const res = await fetch(`/api/admin/coupons/${it.id}/`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setError(d?.detail || "Erro ao atualizar");
+      return false;
+    }
+    setEditingId(null);
+    return true;
+  }
+
+  async function removeItem(id: number) {
+    setError(null);
+    const res = await fetch(`/api/admin/coupons/${id}/`, { method: "DELETE" });
+    if (res.ok) {
+      setItems((prev) => prev.filter((i) => i.id !== id));
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setError(d?.detail || "Erro ao remover");
+    }
+  }
+
+  return (
+    <div>
+      <h3 className="mb-3 text-lg font-semibold">Cupons de Desconto</h3>
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div>
+          <label className="mb-1 block text-sm text-[#3F5F4F]">Código</label>
+          <Input placeholder="Ex.: BLACKFRIDAY10" value={form.code} onChange={(e) => setForm((f: any) => ({ ...f, code: e.target.value }))} />
+          <p className="mt-1 text-xs text-[#3F5F4F]/70">Texto que o cliente digita para aplicar o desconto.</p>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm text-[#3F5F4F]">Descrição</label>
+          <Input placeholder="Ex.: 10% OFF na Black Friday" value={form.description} onChange={(e) => setForm((f: any) => ({ ...f, description: e.target.value }))} />
+          <p className="mt-1 text-xs text-[#3F5F4F]/70">Aparece apenas na administração; ajuda na identificação.</p>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm text-[#3F5F4F]">Tipo</label>
+          <select className="w-full rounded border px-2 py-1 text-sm" value={form.discount_type} onChange={(e) => setForm((f: any) => ({ ...f, discount_type: e.target.value }))}>
+            <option value="percent">Percentual (%)</option>
+            <option value="amount">Valor fixo (R$)</option>
+          </select>
+          <p className="mt-1 text-xs text-[#3F5F4F]/70">Escolha entre desconto percentual ou valor fixo.</p>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm text-[#3F5F4F]">Valor do desconto</label>
+          <Input type="number" step="0.01" placeholder={form.discount_type === "percent" ? "Percentual (%)" : "Valor (R$)"} value={String(form.value)} onChange={(e) => setForm((f: any) => ({ ...f, value: e.target.value }))} />
+          <p className="mt-1 text-xs text-[#3F5F4F]/70">Informe o número correspondente ao tipo escolhido acima.</p>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm text-[#3F5F4F]">Máx. usos</label>
+          <Input type="number" placeholder="0 = ilimitado" value={String(form.max_uses)} onChange={(e) => setForm((f: any) => ({ ...f, max_uses: e.target.value }))} />
+          <p className="mt-1 text-xs text-[#3F5F4F]/70">Quantidade máxima de vezes que este cupom pode ser usado.</p>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm text-[#3F5F4F]">Mínimo do pedido (R$)</label>
+          <Input type="number" step="0.01" placeholder="Ex.: 100,00" value={String(form.min_order_total)} onChange={(e) => setForm((f: any) => ({ ...f, min_order_total: e.target.value }))} />
+          <p className="mt-1 text-xs text-[#3F5F4F]/70">Subtotal mínimo do carrinho para permitir aplicar o cupom.</p>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm text-[#3F5F4F]">Expira em</label>
+          <input className="w-full rounded border px-2 py-1 text-sm" type="datetime-local" value={form.expires_at} onChange={(e) => setForm((f: any) => ({ ...f, expires_at: e.target.value }))} />
+          <p className="mt-1 text-xs text-[#3F5F4F]/70">Data/hora limite para uso do cupom (opcional).</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input id="coupon-active" type="checkbox" checked={!!form.active} onChange={(e) => setForm((f: any) => ({ ...f, active: e.target.checked }))} />
+          <label htmlFor="coupon-active" className="text-sm">Ativo</label>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button className="bg-primary text-black" onClick={createCoupon}>Criar cupom</Button>
+      </div>
+
+      <div className="mt-6 overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="border-b">
+              <th className="p-2 text-left">Código</th>
+              <th className="p-2 text-left">Descrição</th>
+              <th className="p-2 text-left">Tipo</th>
+              <th className="p-2 text-left">Valor</th>
+              <th className="p-2 text-left">Mín. Pedido</th>
+              <th className="p-2 text-left">Usos</th>
+              <th className="p-2 text-left">Máx. Usos</th>
+              <th className="p-2 text-left">Expira em</th>
+              <th className="p-2 text-left">Ativo</th>
+              <th className="p-2 text-left">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it, idx) => {
+              const fmtCurrency = (n: any) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(n || 0));
+              const fmtPercent = (n: any) => `${Number(n || 0)}%`;
+              const fmtDateTime = (v: any) => {
+                if (!v) return "-";
+                try {
+                  const d = new Date(v);
+                  if (isNaN(d.getTime())) return String(v).replace('T', ' ').slice(0, 16);
+                  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+                } catch {
+                  return String(v).slice(0, 16);
+                }
+              };
+              const isEditing = editingId === it.id;
+              return (
+                <tr key={it.id || idx} className="border-b">
+                  {/* Código */}
+                  <td className="p-2">
+                    {isEditing ? (
+                      <Input value={it.code} onChange={(e) => setItems((prev) => prev.map((p) => p.id === it.id ? { ...p, code: e.target.value } : p))} />
+                    ) : (
+                      <span className="font-medium text-zinc-800">{it.code}</span>
+                    )}
+                  </td>
+                  {/* Descrição */}
+                  <td className="p-2">
+                    {isEditing ? (
+                      <Input value={it.description || ""} onChange={(e) => setItems((prev) => prev.map((p) => p.id === it.id ? { ...p, description: e.target.value } : p))} />
+                    ) : (
+                      <span className="text-zinc-700">{it.description || '-'}</span>
+                    )}
+                  </td>
+                  {/* Tipo */}
+                  <td className="p-2">
+                    {isEditing ? (
+                      <select className="rounded border px-2 py-1 text-sm" value={it.discount_type} onChange={(e) => setItems((prev) => prev.map((p) => p.id === it.id ? { ...p, discount_type: e.target.value } : p))}>
+                        <option value="percent">Percentual</option>
+                        <option value="amount">Valor</option>
+                      </select>
+                    ) : (
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${it.discount_type === 'percent' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {it.discount_type === 'percent' ? 'Percentual' : 'Valor'}
+                      </span>
+                    )}
+                  </td>
+                  {/* Valor */}
+                  <td className="p-2">
+                    {isEditing ? (
+                      <Input type="number" step="0.01" value={String(it.value ?? 0)} onChange={(e) => setItems((prev) => prev.map((p) => p.id === it.id ? { ...p, value: e.target.value } : p))} />
+                    ) : (
+                      <span className="text-zinc-800">{it.discount_type === 'percent' ? fmtPercent(it.value) : fmtCurrency(it.value)}</span>
+                    )}
+                  </td>
+                  {/* Mín. Pedido */}
+                  <td className="p-2">
+                    {isEditing ? (
+                      <Input type="number" step="0.01" value={String(it.min_order_total ?? 0)} onChange={(e) => setItems((prev) => prev.map((p) => p.id === it.id ? { ...p, min_order_total: e.target.value } : p))} />
+                    ) : (
+                      <span className="text-zinc-800">{fmtCurrency(it.min_order_total)}</span>
+                    )}
+                  </td>
+                  {/* Usos */}
+                  <td className="p-2">
+                    <span className="text-zinc-700">{String(it.used_count ?? 0)}</span>
+                  </td>
+                  {/* Máx. Usos */}
+                  <td className="p-2">
+                    {isEditing ? (
+                      <Input type="number" value={String(it.max_uses ?? 0)} onChange={(e) => setItems((prev) => prev.map((p) => p.id === it.id ? { ...p, max_uses: e.target.value } : p))} />
+                    ) : (
+                      <span className="text-zinc-700">{Number(it.max_uses || 0) === 0 ? 'Ilimitado' : String(it.max_uses)}</span>
+                    )}
+                  </td>
+                  {/* Expira em */}
+                  <td className="p-2">
+                    {isEditing ? (
+                      <input className="rounded border px-2 py-1 text-sm" type="datetime-local" value={(it.expires_at ? String(it.expires_at).slice(0, 16) : "")} onChange={(e) => setItems((prev) => prev.map((p) => p.id === it.id ? { ...p, expires_at: e.target.value } : p))} />
+                    ) : (
+                      <span className="text-zinc-700">{fmtDateTime(it.expires_at)}</span>
+                    )}
+                  </td>
+                  {/* Ativo */}
+                  <td className="p-2">
+                    {isEditing ? (
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={!!it.active} onChange={(e) => setItems((prev) => prev.map((p) => p.id === it.id ? { ...p, active: e.target.checked } : p))} /> Ativo
+                      </label>
+                    ) : (
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${it.active ? 'bg-green-100 text-green-700' : 'bg-zinc-200 text-zinc-700'}`}>
+                        <span className={`h-2 w-2 rounded-full ${it.active ? 'bg-green-600' : 'bg-zinc-500'}`} />
+                        {it.active ? 'Ativo' : 'Inativo'}
+                      </span>
+                    )}
+                  </td>
+                  {/* Ações */}
+                  <td className="p-2">
+                    <div className="flex items-center gap-2">
+                      {isEditing ? (
+                        <>
+                          <Button size="sm" onClick={() => updateItem(it)}>Salvar</Button>
+                          <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>Cancelar</Button>
+                          <Button size="sm" variant="outline" onClick={() => removeItem(it.id)}>Excluir</Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button size="sm" onClick={() => setEditingId(it.id)}>Editar</Button>
+                          <Button size="sm" variant="outline" onClick={() => removeItem(it.id)}>Excluir</Button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {items.length === 0 && (
+              <tr>
+                <td className="p-2 text-sm text-zinc-600" colSpan={10}>Nenhum cupom cadastrado.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+    </div>
+  );
+}
+
 function SettingsAdmin() {
   const [activeTab, setActiveTab] = useState<string>("site");
   return (
@@ -1766,7 +2031,7 @@ export default function ManagementPage() {
           {active === "orders" && <OrdersAdmin />}
           {active === "customers" && <CustomersAdmin />}
           {active === "inventory" && <Placeholder title="Inventário" />}
-          {active === "promotions" && <Placeholder title="Promoções/Cupons" />}
+          {active === "promotions" && <CouponsAdmin />}
           {active === "marketing" && <Placeholder title="Marketing" />}
           {active === "shipping" && <Placeholder title="Frete" />}
   {active === "payments" && <Placeholder title="Pagamentos" />}

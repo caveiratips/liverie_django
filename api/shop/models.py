@@ -152,6 +152,8 @@ class Order(models.Model):
     # Status livre para permitir configuração dinâmica
     status = models.CharField(max_length=40, default="pending")
     total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    coupon_code = models.CharField(max_length=50, blank=True, default="")
+    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     payment_method = models.CharField(max_length=40, blank=True, default="")
     shipping_method = models.CharField(max_length=40, blank=True, default="")
     recipient_name = models.CharField(max_length=120, blank=True, default="")
@@ -192,3 +194,39 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f"Item {self.title} x{self.quantity}"
+
+
+class Coupon(models.Model):
+    PERCENT = 'percent'
+    AMOUNT = 'amount'
+    DISCOUNT_TYPE_CHOICES = [
+        (PERCENT, 'Percentual'),
+        (AMOUNT, 'Valor fixo'),
+    ]
+
+    code = models.CharField(max_length=50, unique=True)
+    description = models.CharField(max_length=255, blank=True)
+    discount_type = models.CharField(max_length=20, choices=DISCOUNT_TYPE_CHOICES, default=PERCENT)
+    value = models.DecimalField(max_digits=10, decimal_places=2)
+    max_uses = models.IntegerField(default=0, help_text='0 para ilimitado')
+    used_count = models.IntegerField(default=0)
+    min_order_total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def is_valid(self):
+        if not self.active:
+            return False
+        if self.expires_at and self.expires_at < timezone.now():
+            return False
+        if self.max_uses and self.used_count >= self.max_uses:
+            return False
+        return True
+
+    def __str__(self):
+        return f"{self.code} ({self.discount_type} {self.value})"

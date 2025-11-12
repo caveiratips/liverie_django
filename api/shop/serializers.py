@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from decimal import Decimal, InvalidOperation
-from .models import Category, Product, ProductImage, SiteSetting, CustomerProfile, CustomerAddress, Order, OrderItem, OrderStatus
+from .models import Category, Product, ProductImage, SiteSetting, CustomerProfile, CustomerAddress, Order, OrderItem, OrderStatus, Coupon
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -278,6 +278,8 @@ class OrderSerializer(serializers.ModelSerializer):
     delivery_address_id = serializers.PrimaryKeyRelatedField(
         queryset=CustomerAddress.objects.all(), source="delivery_address", write_only=True, required=False
     )
+    coupon_code = serializers.CharField(required=False, allow_blank=True)
+    discount_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
 
     class Meta:
         model = Order
@@ -286,6 +288,8 @@ class OrderSerializer(serializers.ModelSerializer):
             "order_number",
             "status",
             "total",
+            "coupon_code",
+            "discount_amount",
             "payment_method",
             "shipping_method",
             "delivery_address_id",
@@ -299,7 +303,10 @@ class OrderSerializer(serializers.ModelSerializer):
         items_data = validated_data.pop("items", [])
         # Usar 'user' passado por perform_create ou cair no request
         user = validated_data.pop("user", None) or self.context["request"].user
-        order = Order.objects.create(user=user, **validated_data)
+        # Extra: normaliza desconto
+        discount = validated_data.pop("discount_amount", None)
+        coupon_code = validated_data.pop("coupon_code", "")
+        order = Order.objects.create(user=user, coupon_code=coupon_code or "", discount_amount=discount or 0, **validated_data)
         total = 0
         for it in items_data:
             qty = int(it.get("quantity", 1) or 1)
@@ -312,10 +319,45 @@ class OrderSerializer(serializers.ModelSerializer):
             oi_data = {**it, "unit_price": price_dec}
             OrderItem.objects.create(order=order, **oi_data)
             total += qty * float(price_dec)
-        # Persistir total
-        order.total = total
+        # Aplica desconto
+        try:
+            discount_dec = Decimal(str(order.discount_amount or 0))
+        except (InvalidOperation, TypeError, ValueError):
+            discount_dec = Decimal("0")
+        total_dec = Decimal(str(total)) - (discount_dec if discount_dec >= 0 else Decimal("0"))
+        if total_dec < Decimal("0"):
+            total_dec = Decimal("0")
+        order.total = total_dec
         order.save(update_fields=["total"])
+        # Incrementa uso de cupom se válido
+        if coupon_code:
+            try:
+                c = Coupon.objects.filter(code=coupon_code).first()
+                if c and c.is_valid():
+                    c.used_count = (c.used_count or 0) + 1
+                    c.save(update_fields=["used_count"])
+            except Exception:
+                pass
         return order
+
+
+class CouponSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Coupon
+        fields = [
+            "id",
+            "code",
+            "description",
+            "discount_type",
+            "value",
+            "max_uses",
+            "used_count",
+            "min_order_total",
+            "expires_at",
+            "active",
+            "created_at",
+            "updated_at",
+        ]
 
 
 class AdminOrderSerializer(serializers.ModelSerializer):

@@ -20,6 +20,7 @@ export default function CheckoutPage() {
   const router = useRouter();
   const [session, setSession] = useState<{ logged_in: boolean; username: string | null; name: string | null; address?: any; addresses?: any[]; defaultDeliveryAddressId?: number | null } | null>(null);
   const [items, setItems] = useState<CartItem[]>([]);
+  const [cartHydrated, setCartHydrated] = useState<boolean>(false);
 
   // Carregar sessão
   useEffect(() => {
@@ -38,10 +39,16 @@ export default function CheckoutPage() {
         if (Array.isArray(parsed)) setItems(parsed);
       }
     } catch {}
+    setCartHydrated(true);
   }, []);
   useEffect(() => {
-    try { localStorage.setItem("cart_items", JSON.stringify(items)); } catch {}
-  }, [items]);
+    if (!cartHydrated) return;
+    try {
+      localStorage.setItem("cart_items", JSON.stringify(items));
+      const count = items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+      window.dispatchEvent(new CustomEvent("cart-updated", { detail: { count } }));
+    } catch {}
+  }, [items, cartHydrated]);
 
   // Etapas
   const steps = ["Login", "Sacola", "Endereço", "Frete", "Pagamento", "Finalizar"] as const;
@@ -141,8 +148,19 @@ export default function CheckoutPage() {
   const [boletoCpf, setBoletoCpf] = useState<string>("");
   const [orderConfirmed, setOrderConfirmed] = useState<boolean>(false);
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
+  const [couponCode, setCouponCode] = useState<string>("");
+  const [couponApplied, setCouponApplied] = useState<{ code: string; discount_amount: number } | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+
+  function removeCoupon() {
+    setCouponApplied(null);
+    setCouponCode("");
+    setCouponError(null);
+  }
 
   const total = items.reduce((sum, it) => sum + it.price * it.qty, 0);
+  const discount = Math.max(0, couponApplied?.discount_amount || 0);
+  const grandTotal = Math.max(0, total - discount) + shippingMethod.price;
   function inc(productId: number) { setItems((prev: any) => prev.map((it: any) => (it.productId === productId ? { ...it, qty: it.qty + 1 } : it))); }
   function dec(productId: number) { setItems((prev: any) => prev.map((it: any) => (it.productId === productId ? { ...it, qty: Math.max(1, it.qty - 1) } : it))); }
   function remove(productId: number) { setItems((prev: any) => prev.filter((it: any) => it.productId !== productId)); }
@@ -226,6 +244,8 @@ export default function CheckoutPage() {
       delivery_address_id: (selected as any)?.id,
       shipping_method: shippingMethod.key,
       payment_method: paymentMethod,
+      coupon_code: couponApplied?.code || "",
+      discount_amount: couponApplied?.discount_amount || 0,
     } as any;
     const res = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const d = await res.json().catch(() => ({}));
@@ -238,6 +258,28 @@ export default function CheckoutPage() {
       try { window.dispatchEvent(new CustomEvent("orders-updated")); } catch {}
     } else {
       setError(d?.detail || "Falha ao finalizar pedido");
+    }
+  }
+
+  async function applyCoupon() {
+    setCouponError(null);
+    setCouponApplied(null);
+    const code = couponCode.trim();
+    if (!code) { setCouponError("Informe o código do cupom"); return; }
+    try {
+      const res = await fetch("/api/coupons/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, subtotal: total }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d?.discount_amount != null) {
+        setCouponApplied({ code: d.code, discount_amount: Number(d.discount_amount || 0) });
+      } else {
+        setCouponError(d?.error || "Cupom inválido ou indisponível");
+      }
+    } catch {
+      setCouponError("Falha ao aplicar cupom");
     }
   }
 
@@ -343,11 +385,37 @@ export default function CheckoutPage() {
                 <button onClick={() => remove(it.productId)} className="text-sm text-red-600 hover:underline">Remover</button>
               </div>
             ))}
-            <div className="flex items-center justify-between rounded bg-[#C9DAC7]/30 px-4 py-3 text-base">
-              <span className="font-medium text-[#3F5F4F]">Total</span>
-              <span className="font-semibold text-[#2f4a3f]">{currencyBRL(total)}</span>
+            <div className="flex items-center gap-2">
+              <Input className="max-w-[200px]" placeholder="Código do cupom" value={couponCode} onChange={(e) => setCouponCode(e.target.value)} />
+              <Button variant="outline" onClick={applyCoupon}>Aplicar</Button>
+              {couponApplied && (
+                <>
+                  <span className="text-sm text-emerald-700">Aplicado: {couponApplied.code} (−{currencyBRL(discount)})</span>
+                  <button type="button" onClick={removeCoupon} className="text-sm text-[#3F5F4F]/80 hover:text-red-600 hover:underline">Remover</button>
+                </>
+              )}
+              {couponError && <span className="text-sm text-red-600">{couponError}</span>}
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="space-y-1 rounded bg-[#C9DAC7]/30 px-4 py-3 text-base">
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-[#3F5F4F]">Subtotal</span>
+                <span className="font-semibold text-[#2f4a3f]">{currencyBRL(total)}</span>
+              </div>
+              {discount > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-[#3F5F4F]">Desconto do cupom</span>
+                  <span className="text-emerald-700">−{currencyBRL(discount)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-[#3F5F4F]">Total</span>
+                <span className="font-semibold text-[#2f4a3f]">{currencyBRL(Math.max(0, total - discount))}</span>
+              </div>
+            </div>
+            <div className="flex justify-between gap-2">
+              <Button variant="outline" onClick={() => router.push("/loja")}>
+                Continuar comprando
+              </Button>
               <Button className="bg-[#3F5F4F] text-white hover:bg-[#2f4a3f] transition-colors disabled:opacity-60 disabled:cursor-not-allowed" onClick={() => setStep(2)} disabled={!isCartValid()}>Continuar</Button>
             </div>
           </div>
@@ -499,7 +567,7 @@ export default function CheckoutPage() {
                 ))}
               </div>
               {paymentMethod === "pix" && (
-                <p className="mt-2 text-sm text-[#2f4a3f]">Geraremos um QR code após confirmar. Total: <span className="font-semibold">{currencyBRL(total)}</span></p>
+                <p className="mt-2 text-sm text-[#2f4a3f]">Geraremos um QR code após confirmar. Total: <span className="font-semibold">{currencyBRL(grandTotal)}</span></p>
               )}
               {paymentMethod === "cartao" && (
                 <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -575,13 +643,22 @@ export default function CheckoutPage() {
                       <div className="text-base font-medium">Frete ({shippingMethod.label}, {shippingMethod.eta})</div>
                       <div className="text-base text-[#2f4a3f]">{currencyBRL(shippingMethod.price)}</div>
                     </div>
+                    {discount > 0 && (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="text-base">Desconto</div>
+                          <button type="button" className="text-xs text-[#3F5F4F]/70 hover:text-red-600 hover:underline" onClick={removeCoupon}>Remover</button>
+                        </div>
+                        <div className="text-base text-emerald-700">−{currencyBRL(discount)}</div>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
                       <div className="text-base font-medium">Pagamento</div>
                       <div className="text-base capitalize text-[#2f4a3f]">{paymentMethod}</div>
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="text-base font-semibold">Total</div>
-                      <div className="text-base font-semibold text-[#2f4a3f]">{currencyBRL(total + shippingMethod.price)}</div>
+                      <div className="text-base font-semibold text-[#2f4a3f]">{currencyBRL(grandTotal)}</div>
                     </div>
                   </div>
                 </div>

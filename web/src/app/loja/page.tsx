@@ -51,6 +51,7 @@ export default function LojaPage() {
   const router = useRouter();
   type CartItem = { productId: number; title: string; price: number; image?: string; qty: number };
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartHydrated, setCartHydrated] = useState<boolean>(false);
   // Removido estado de pedidos da página da loja.
 
   useEffect(() => {
@@ -109,12 +110,16 @@ export default function LojaPage() {
         if (Array.isArray(parsed)) setCartItems(parsed);
       }
     } catch {}
+    setCartHydrated(true);
   }, []);
   useEffect(() => {
+    if (!cartHydrated) return;
     try {
       localStorage.setItem("cart_items", JSON.stringify(cartItems));
+      const count = cartItems.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+      window.dispatchEvent(new CustomEvent("cart-updated", { detail: { count } }));
     } catch {}
-  }, [cartItems]);
+  }, [cartItems, cartHydrated]);
 
   // Removido helper de requireLogin; fluxo segue diretamente para /checkout.
 
@@ -139,8 +144,7 @@ export default function LojaPage() {
 
   function onAddToCart(p: Product) {
     addToCart(p, 1);
-    const start = session?.logged_in ? 1 : 0;
-    router.push(`/checkout?start=${start}`);
+    // Permanecer na loja; cabeçalho mostrará a quantidade atualizada
   }
 
   const filtered = products.filter((p) => {
@@ -308,6 +312,7 @@ function Banner() {
   const [intervalSec, setIntervalSec] = useState<number>(10);
   const [index, setIndex] = useState<number>(0);
   const timerRef = useRef<number | null>(null);
+  const [containerPx, setContainerPx] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -375,6 +380,42 @@ function Banner() {
     return () => window.removeEventListener("keydown", onKey);
   }, [items.length]);
 
+  // Ajusta a altura do container pela proporção da imagem atual para ocupar 100% da largura sem cortar
+  useEffect(() => {
+    const cur = items[index];
+    const src = getImageUrl(cur?.image_url);
+    if (!src || typeof window === "undefined") {
+      setContainerPx(undefined);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth || 1;
+      const h = img.naturalHeight || 1;
+      const vw = window.innerWidth || 1;
+      setContainerPx(Math.round((vw * h) / w));
+    };
+    img.src = src;
+  }, [index, items]);
+
+  useEffect(() => {
+    function onResize() {
+      const cur = items[index];
+      const src = getImageUrl(cur?.image_url);
+      if (!src || typeof window === "undefined") return;
+      const img = new Image();
+      img.onload = () => {
+        const w = img.naturalWidth || 1;
+        const h = img.naturalHeight || 1;
+        const vw = window.innerWidth || 1;
+        setContainerPx(Math.round((vw * h) / w));
+      };
+      img.src = src;
+    }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [index, items]);
+
   const goPrev = () => setIndex((i) => (i - 1 + items.length) % items.length);
   const goNext = () => setIndex((i) => (i + 1) % items.length);
 
@@ -388,7 +429,7 @@ function Banner() {
       <div className="w-full px-0">
         <div className="relative overflow-hidden">
           {/* Slides */}
-          <div className="relative h-[55vh] sm:h-[65vh] md:h-[75vh] lg:h-[85vh]">
+          <div className="relative" style={{ height: containerPx ? `${containerPx}px` : undefined }}>
             {items.map((it, i) => {
               const img = getImageUrl(it.image_url);
               const active = i === index;
@@ -403,7 +444,7 @@ function Banner() {
                     <img
                       src={img}
                       alt={"banner"}
-                      className="h-full w-full object-cover"
+                      className="w-screen h-auto object-contain bg-white"
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center bg-muted text-sm text-[#3F5F4F]/70">
