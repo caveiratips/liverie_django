@@ -8,6 +8,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const nextUrl = (() => {
+    try {
+      const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : "");
+      const n = sp.get('next');
+      if (n && /^\//.test(n)) return n;
+    } catch {}
+    return "/loja";
+  })();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -23,7 +31,7 @@ export default function LoginPage() {
         const d = await res.json().catch(() => ({ detail: "Falha no login" }));
         setError(d?.detail || "Falha no login");
       } else {
-        window.location.href = "/loja";
+        window.location.href = nextUrl;
       }
     } catch (e) {
       setError("Erro inesperado");

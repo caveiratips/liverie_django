@@ -16,6 +16,7 @@ from .views import (
     AdminCustomerView,
     AdminCustomerListView,
     AdminOrderByNumberView,
+    AdminBannerUploadView,
 )
 
 router = DefaultRouter()
@@ -41,4 +42,5 @@ urlpatterns = [
     # Admin
     path('', include(router.urls)),
     path('admin/site-setting/', SiteSettingView.as_view(), name='site-setting'),
+    path('admin/upload-banner/', AdminBannerUploadView.as_view(), name='admin-upload-banner'),
 ]

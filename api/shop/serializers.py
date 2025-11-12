@@ -225,6 +225,7 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
         fields = [
             "telefone",
             "cpf",
+            "data_nascimento",
             "cep",
             "endereco",
             "numero",
@@ -439,7 +440,7 @@ class AdminCustomerSerializer(serializers.Serializer):
         if profile_data is not None:
             profile, _created = CustomerProfile.objects.get_or_create(user=instance)
             for field in [
-                "telefone", "cpf", "cep", "endereco", "numero",
+                "telefone", "cpf", "data_nascimento", "cep", "endereco", "numero",
                 "complemento", "bairro", "cidade", "estado",
             ]:
                 val = profile_data.get(field)

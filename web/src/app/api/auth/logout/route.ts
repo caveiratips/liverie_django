@@ -3,7 +3,10 @@ import { cookies } from "next/headers";
 
 export async function POST() {
   const cookieStore = await cookies();
-  cookieStore.delete("auth_token");
-  cookieStore.delete("refresh_token");
+  try {
+    cookieStore.set("auth_token", "", { httpOnly: true, secure: false, sameSite: "lax", path: "/", maxAge: 0 });
+    cookieStore.set("refresh_token", "", { httpOnly: true, secure: false, sameSite: "lax", path: "/", maxAge: 0 });
+    cookieStore.set("auth_username", "", { httpOnly: true, secure: false, sameSite: "lax", path: "/", maxAge: 0 });
+  } catch {}
   return NextResponse.json({ ok: true });
 }

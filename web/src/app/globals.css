@@ -120,3 +120,20 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Transições suaves entre etapas do checkout */
+@keyframes step-enter {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.step-transition-enter { animation: step-enter 220ms ease-out both; }
+
+/* Destaque sutil no passo atual ao ficar ativo */
+@keyframes active-step {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
+
+.active-step { animation: active-step 900ms ease-in-out 1; }

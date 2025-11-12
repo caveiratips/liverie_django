@@ -63,6 +63,205 @@ function LoginForm({ onLoggedIn }: { onLoggedIn: () => void }) {
   );
 }
 
+type AdminBannerItem = { id?: number; image_url: string; link_url?: string; enabled?: boolean; order?: number };
+
+function BannersAdmin() {
+  const [items, setItems] = useState<AdminBannerItem[]>([]);
+  const [intervalSec, setIntervalSec] = useState<number>(10);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      setMsg(null);
+      try {
+        const r = await fetch("/api/banners", { cache: "no-store" });
+        if (r.ok) {
+          const data = await r.json();
+          const arr: AdminBannerItem[] = Array.isArray(data)
+            ? data
+            : Array.isArray(data?.items)
+            ? data.items
+            : [];
+          const iv = Number(data?.interval_seconds ?? 10);
+          setItems(arr);
+          setIntervalSec(Number.isFinite(iv) && iv > 0 ? iv : 10);
+          return;
+        }
+      } catch {}
+      try {
+        const ls = localStorage.getItem("home_banners");
+        const parsed = ls ? JSON.parse(ls) : [];
+        const ivls = Number(localStorage.getItem("home_banners_interval") || 10);
+        setItems(Array.isArray(parsed) ? parsed : []);
+        setIntervalSec(Number.isFinite(ivls) && ivls > 0 ? ivls : 10);
+        setMsg("Usando armazenamento local por enquanto (backend de banners não disponível).");
+      } catch {}
+    }
+    load();
+  }, []);
+
+  function addBanner() {
+    const next: AdminBannerItem = { image_url: "", link_url: "", enabled: true, order: items.length };
+    setItems((prev) => [...prev, next]);
+  }
+
+  function removeBanner(idx: number) {
+    setItems((prev) => prev.filter((_, i) => i !== idx).map((b, i) => ({ ...b, order: i })));
+  }
+
+  function move(idx: number, dir: -1 | 1) {
+    setItems((prev) => {
+      const arr = [...prev];
+      const j = idx + dir;
+      if (j < 0 || j >= arr.length) return prev;
+      const tmp = arr[idx];
+      arr[idx] = arr[j];
+      arr[j] = tmp;
+      return arr.map((b, i) => ({ ...b, order: i }));
+    });
+  }
+
+  async function saveAll() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/banners", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: items.map((b) => ({
+            ...b,
+            // Link apenas para destino interno; se não começar com '/', assume slug de produto
+            link_url: (b.link_url || "").startsWith("/") ? (b.link_url || "") : (b.link_url ? `/loja/produto/${b.link_url}` : ""),
+          })),
+          interval_seconds: intervalSec,
+        }),
+      });
+      if (res.ok) {
+        setMsg("Banners salvos com sucesso.");
+        setSaving(false);
+        return;
+      }
+    } catch {}
+    try {
+      const normalized = items.map((b) => ({
+        ...b,
+        link_url: (b.link_url || "").startsWith("/") ? (b.link_url || "") : (b.link_url ? `/loja/produto/${b.link_url}` : ""),
+      }));
+      localStorage.setItem("home_banners", JSON.stringify(normalized));
+      localStorage.setItem("home_banners_interval", String(intervalSec));
+      setMsg("Alterações salvas localmente. Configure o backend para persistência.");
+    } catch {}
+    setSaving(false);
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-4">
+        <h3 className="mb-2 text-lg font-semibold">Banners</h3>
+        <p className="mb-4 text-sm text-zinc-600">
+          Gerencie os banners exibidos abaixo das categorias na página principal. Faça upload da imagem do seu computador e informe o link de destino do banner.
+        </p>
+        {msg && <p className="mb-3 text-xs text-zinc-600">{msg}</p>}
+        <div className="mb-4 flex items-center gap-3">
+          <label className="text-sm">Intervalo de rotação (segundos)</label>
+          <Input
+            className="w-24"
+            type="number"
+            min={1}
+            value={intervalSec}
+            onChange={(e) => setIntervalSec(Number(e.target.value || 10))}
+          />
+        </div>
+
+        <div className="space-y-4">
+          {items.map((b, i) => (
+            <Card key={i} className="p-3">
+              <div className="flex items-start gap-4">
+                <div className="h-20 w-36 overflow-hidden rounded bg-muted">
+                  {b.image_url ? (
+                    <img src={b.image_url} alt="banner" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-xs text-zinc-500">Sem imagem</div>
+                  )}
+                </div>
+                <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs">Imagem do banner</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        // Tenta upload no backend para evitar limites do localStorage
+                        try {
+                          const fd = new FormData();
+                          fd.append("file", file);
+                          const up = await fetch("/api/shop/admin/upload-banner/", {
+                            method: "POST",
+                            body: fd,
+                          });
+                          if (up.ok) {
+                            const json = await up.json();
+                            const url = String(json?.url || "");
+                            if (url) {
+                              setItems((prev) => prev.map((x, idx) => (idx === i ? { ...x, image_url: url } : x)));
+                              return;
+                            }
+                          }
+                        } catch {}
+                        // Fallback: Data URL (pode falhar se imagem for muito grande)
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          const dataUrl = String(reader.result || "");
+                          setItems((prev) => prev.map((x, idx) => (idx === i ? { ...x, image_url: dataUrl } : x)));
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                    <p className="mt-1 text-xs text-zinc-500">Selecione uma imagem do computador. Usamos Data URL para pré-visualização e salvamento.</p>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs">Link de destino (produto)</label>
+                    <Input value={b.link_url || ""} onChange={(e) => {
+                      const v = e.target.value;
+                      setItems((prev) => prev.map((x, idx) => (idx === i ? { ...x, link_url: v } : x)));
+                    }} placeholder="/loja/produto/slug" />
+                    <p className="mt-1 text-xs text-zinc-500">Informe somente rotas internas para produtos, por exemplo: /loja/produto/meu-produto</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs">Ativo</label>
+                    <input
+                      type="checkbox"
+                      checked={b.enabled ?? true}
+                      onChange={(e) => setItems((prev) => prev.map((x, idx) => (idx === i ? { ...x, enabled: e.target.checked } : x)))}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 flex gap-2">
+                <Button variant="outline" className="border-zinc-300" onClick={() => move(i, -1)}>Mover para cima</Button>
+                <Button variant="outline" className="border-zinc-300" onClick={() => move(i, 1)}>Mover para baixo</Button>
+                <Button variant="destructive" onClick={() => removeBanner(i)}>Remover</Button>
+              </div>
+            </Card>
+          ))}
+          {items.length === 0 && (
+            <div className="rounded border border-dashed p-6 text-center text-sm text-zinc-600">Nenhum banner cadastrado</div>
+          )}
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <Button className="bg-primary text-black" onClick={addBanner}><Images className="mr-2 h-4 w-4" />Adicionar banner</Button>
+          <Button className="bg-primary text-black" disabled={saving} onClick={saveAll}>{saving ? "Salvando..." : "Salvar alterações"}</Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function CategoriesAdmin() {
   const [items, setItems] = useState<any[]>([]);
   const [name, setName] = useState("");
@@ -1570,13 +1769,13 @@ export default function ManagementPage() {
           {active === "promotions" && <Placeholder title="Promoções/Cupons" />}
           {active === "marketing" && <Placeholder title="Marketing" />}
           {active === "shipping" && <Placeholder title="Frete" />}
-          {active === "payments" && <Placeholder title="Pagamentos" />}
-          {active === "analytics" && <Placeholder title="Analytics" />}
-          {active === "banners" && <Placeholder title="Banners" />}
-          {active === "pages" && <Placeholder title="Páginas" />}
-          {active === "seo" && <Placeholder title="SEO" />}
-          {active === "settings" && <SettingsAdmin />}
-          {active === "order_statuses" && <OrderStatusesAdmin />}
+  {active === "payments" && <Placeholder title="Pagamentos" />}
+  {active === "analytics" && <Placeholder title="Analytics" />}
+  {active === "banners" && <BannersAdmin />}
+  {active === "pages" && <Placeholder title="Páginas" />}
+  {active === "seo" && <Placeholder title="SEO" />}
+  {active === "settings" && <SettingsAdmin />}
+  {active === "order_statuses" && <OrderStatusesAdmin />}
         </main>
       </div>
     </div>

@@ -22,7 +22,7 @@ from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
-from shop.views import RegisterView, MeView
+from shop.views import RegisterView, MeView, ChangePasswordView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -30,6 +30,7 @@ urlpatterns = [
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/register/', RegisterView.as_view(), name='auth_register'),
     path('api/auth/me/', MeView.as_view(), name='auth_me'),
+    path('api/auth/change-password/', ChangePasswordView.as_view(), name='auth_change_password'),
     path('api/', include('shop.urls')),
 ]
 

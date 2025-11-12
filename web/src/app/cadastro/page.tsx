@@ -21,6 +21,7 @@ type FormData = {
   cidade: string;
   estado: string; // UF
   cpf: string;
+  dataNascimento?: string; // dd/mm/aaaa
 };
 
 function onlyDigits(s: string): string {
@@ -44,6 +45,38 @@ function formatCPF(s: string): string {
   if (p3) out += `.${p3}`;
   if (p4) out += `-${p4}`;
   return out;
+}
+
+function formatDateBR(s: string): string {
+  const d = onlyDigits(s).slice(0, 8);
+  const dd = d.slice(0, 2);
+  const mm = d.slice(2, 4);
+  const yyyy = d.slice(4, 8);
+  let out = dd;
+  if (mm) out += `/${mm}`;
+  if (yyyy) out += `/${yyyy}`;
+  return out;
+}
+
+function isValidDateBR(s: string): boolean {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s || "");
+  if (!m) return false;
+  const dd = Number(m[1]);
+  const mm = Number(m[2]);
+  const yyyy = Number(m[3]);
+  if (mm < 1 || mm > 12) return false;
+  const maxDays = new Date(yyyy, mm, 0).getDate();
+  if (dd < 1 || dd > maxDays) return false;
+  const nowYear = new Date().getFullYear();
+  if (yyyy < 1900 || yyyy > nowYear) return false;
+  return true;
+}
+
+function toISOFromBRDate(s?: string): string | undefined {
+  if (!s) return undefined;
+  if (!isValidDateBR(s)) return undefined;
+  const [dd, mm, yyyy] = s.split("/");
+  return `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
 }
 
 function formatPhone(s: string): string {
@@ -105,6 +138,10 @@ const schema = z
       .transform((v) => v.toUpperCase())
       .refine((v) => /^[A-Z]{2}$/.test(v), "UF deve ter 2 letras"),
     cpf: z.string().refine(isValidCPF, "CPF inválido"),
+    dataNascimento: z
+      .string()
+      .optional()
+      .refine((v) => !v || isValidDateBR(v), "Data de nascimento inválida"),
   })
   .refine((data) => data.senha === data.confirmSenha, {
     path: ["confirmSenha"],
@@ -140,6 +177,7 @@ export default function CadastroClientePage() {
       cidade: "",
       estado: "",
       cpf: "",
+      dataNascimento: "",
     },
   });
 
@@ -148,6 +186,7 @@ export default function CadastroClientePage() {
   const cepVal = watch("cep");
   const cpfVal = watch("cpf");
   const telVal = watch("telefone");
+  const birthVal = watch("dataNascimento");
 
   useEffect(() => {
     // formata CEP conforme digitação
@@ -166,6 +205,12 @@ export default function CadastroClientePage() {
     setValue("telefone", formatPhone(telVal || ""), { shouldValidate: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [telVal]);
+
+  useEffect(() => {
+    // formata Data de nascimento conforme digitação
+    setValue("dataNascimento", formatDateBR(birthVal || ""), { shouldValidate: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [birthVal]);
 
   async function lookupCEP() {
     const digits = onlyDigits(cepVal || "");
@@ -205,6 +250,7 @@ export default function CadastroClientePage() {
       cpf: onlyDigits(values.cpf),
       telefone: onlyDigits(values.telefone || ""),
       estado: values.estado.toUpperCase(),
+      data_nascimento: toISOFromBRDate(values.dataNascimento || ""),
     };
     const res = await fetch("/api/auth/register", {
       method: "POST",
@@ -322,6 +368,13 @@ export default function CadastroClientePage() {
               <label className="mb-1 block text-sm">CPF</label>
               <Input {...register("cpf")} placeholder="000.000.000-00" />
               {errors.cpf && <p className="mt-1 text-xs text-red-600">{errors.cpf.message}</p>}
+            </div>
+            <div>
+              <label className="mb-1 block text-sm">Data de nascimento</label>
+              <Input {...register("dataNascimento")} placeholder="dd/mm/aaaa" />
+              {errors.dataNascimento && (
+                <p className="mt-1 text-xs text-red-600">{errors.dataNascimento.message}</p>
+              )}
             </div>
           </div>
 

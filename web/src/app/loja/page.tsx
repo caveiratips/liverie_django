@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Heart, LogIn, LogOut, ShoppingBag, ShoppingCart, CreditCard, Truck } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Heart, LogIn, LogOut, ShoppingBag, ShoppingCart, CreditCard, Truck, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useForm } from "react-hook-form";
@@ -22,17 +23,8 @@ type Product = {
   images?: ProductImage[];
 };
 
-type OrderItemDTO = { id: number; title: string; image_url?: string; unit_price: number; quantity: number };
-type OrderDTO = {
-  id: number;
-  order_number: string;
-  status: "pending" | "paid" | "separation" | "shipped" | "delivered";
-  total: number;
-  payment_method?: string;
-  shipping_method?: string;
-  created_at: string;
-  items: OrderItemDTO[];
-};
+// Tipos de pedido não são necessários na página da loja,
+// pois a listagem de pedidos ficará somente na página de perfil.
 
 function currencyBRL(n: any): string {
   const num = Number(n || 0);
@@ -56,12 +48,10 @@ export default function LojaPage() {
   } | null>(null);
   const [showLogin, setShowLogin] = useState(false);
   const [showCadastro, setShowCadastro] = useState(false);
-  const [showCart, setShowCart] = useState(false);
-  const [startCheckoutStep, setStartCheckoutStep] = useState<0 | 1 | 2 | 3 | 4 | 5>(1);
-  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+  const router = useRouter();
   type CartItem = { productId: number; title: string; price: number; image?: string; qty: number };
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [orders, setOrders] = useState<OrderDTO[]>([]);
+  // Removido estado de pedidos da página da loja.
 
   useEffect(() => {
     fetch("/api/categories")
@@ -93,40 +83,21 @@ export default function LojaPage() {
       .catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (!session?.logged_in) return;
-    fetch("/api/orders", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d) => {
-        if (Array.isArray(d)) setOrders(d);
-      })
-      .catch(() => {});
-  }, [session?.logged_in]);
+  // Removido carregamento e atualização de pedidos na home.
 
-  useEffect(() => {
-    function refreshOrders() {
-      if (!session?.logged_in) return;
-      fetch("/api/orders", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : []))
-        .then((d) => { if (Array.isArray(d)) setOrders(d); })
-        .catch(() => {});
-    }
-    window.addEventListener('orders-updated', refreshOrders as any);
-    return () => window.removeEventListener('orders-updated', refreshOrders as any);
-  }, [session?.logged_in]);
-
-  // Abrir sacola automaticamente vindo da página de produto
+  // Redirecionar automaticamente para a página de checkout
   useEffect(() => {
     try {
       const usp = new URLSearchParams(window.location.search);
       if (usp.get("openCart") === "1") {
-        setStartCheckoutStep(session?.logged_in ? 1 : 0);
-        setShowCart(true);
+        const start = session?.logged_in ? 1 : 0;
+        router.push(`/checkout?start=${start}`);
       } else if (usp.get("buyNow") === "1") {
-        setStartCheckoutStep(session?.logged_in ? 2 : 0);
-        setShowCart(true);
+        const start = session?.logged_in ? 2 : 0;
+        router.push(`/checkout?start=${start}`);
       }
     } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.logged_in]);
 
   // Carrinho: carregar e persistir
@@ -145,14 +116,7 @@ export default function LojaPage() {
     } catch {}
   }, [cartItems]);
 
-  function requireLogin(action: () => void) {
-    if (session?.logged_in) {
-      action();
-    } else {
-      setPendingAction(() => action);
-      setShowLogin(true);
-    }
-  }
+  // Removido helper de requireLogin; fluxo segue diretamente para /checkout.
 
   function addToCart(p: Product, qty = 1) {
     const price = Number(p.price || 0);
@@ -170,16 +134,13 @@ export default function LojaPage() {
   function buyNow(p: Product) {
     addToCart(p, 1);
     const start = session?.logged_in ? 2 : 0; // login → endereço
-    // 0: Login, 1: Sacola, 2: Endereço, 3: Frete, 4: Pagamento, 5: Finalizar
-    setStartCheckoutStep(start as any);
-    setShowCart(true);
+    router.push(`/checkout?start=${start}`);
   }
 
   function onAddToCart(p: Product) {
     addToCart(p, 1);
     const start = session?.logged_in ? 1 : 0;
-    setStartCheckoutStep(start as any);
-    setShowCart(true);
+    router.push(`/checkout?start=${start}`);
   }
 
   const filtered = products.filter((p) => {
@@ -203,51 +164,7 @@ export default function LojaPage() {
           <ProductGrid products={filtered} onAdd={onAddToCart} onBuy={buyNow} />
         )}
       </section>
-      {session?.logged_in && (
-        <section className="mx-auto max-w-6xl px-4 pb-12">
-          <h2 className="mb-4 text-xl font-semibold text-primary">Meus pedidos</h2>
-          {orders.length === 0 ? (
-            <div className="text-sm text-[#3F5F4F]/80">Você ainda não tem pedidos.</div>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {orders.map((o) => (
-                <div key={o.id} className="rounded-lg border bg-card p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold">Pedido {o.order_number}</div>
-                    <span className="text-xs rounded-full bg-muted px-2 py-1 capitalize">
-                      {({
-                        pending: "pendente",
-                        paid: "pago",
-                        separation: "em separação",
-                        shipped: "enviado",
-                        delivered: "entregue",
-                      } as any)[o.status] || o.status}
-                    </span>
-                  </div>
-                  <div className="mt-2 text-xs text-[#3F5F4F]/70">
-                    {new Date(o.created_at).toLocaleString("pt-BR")}
-                  </div>
-                  <ul className="mt-3 space-y-2 text-sm">
-                    {o.items.slice(0, 3).map((it) => (
-                      <li key={it.id} className="flex items-center justify-between">
-                        <span className="truncate">{it.title} × {it.quantity}</span>
-                        <span>{currencyBRL(it.unit_price * it.quantity)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  {o.items.length > 3 && (
-                    <div className="mt-1 text-xs text-[#3F5F4F]/70">+{o.items.length - 3} itens</div>
-                  )}
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className="text-sm">Total</span>
-                    <span className="text-sm font-semibold text-primary">{currencyBRL(o.total)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
+      {/* Removido bloco "Meus pedidos" da home. Os pedidos permanecem na página de perfil. */}
       {/* Rodapé global via AppChrome/Footer */}
 
       {showLogin && (
@@ -261,25 +178,15 @@ export default function LojaPage() {
               const d = await r.json();
               setSession(d);
             } catch {}
-            const act = pendingAction;
-            setPendingAction(null);
-            if (act) act();
+            // Fecha modal após login; navegação ao checkout é feita via router nas ações.
+            setShowLogin(false);
           }}
         />
       )}
       {showCadastro && (
         <CadastroModal onClose={() => setShowCadastro(false)} onOpenLogin={() => setShowLogin(true)} />
       )}
-      {showCart && (
-        <CartModal
-          items={cartItems}
-          setItems={setCartItems}
-          startStep={startCheckoutStep}
-          onClose={() => setShowCart(false)}
-          onOpenCadastro={() => { setShowCart(false); setShowCadastro(true); }}
-          session={session}
-        />
-      )}
+      {/* Checkout por modal foi desativado; navegação segue para /checkout */}
     </div>
   );
 }
@@ -394,26 +301,146 @@ function NavBar({ categories }: { categories: Category[] }) {
   );
 }
 
+type BannerItem = { id?: number; image_url: string; link_url?: string; enabled?: boolean; order?: number };
+
 function Banner() {
+  const [items, setItems] = useState<BannerItem[]>([]);
+  const [intervalSec, setIntervalSec] = useState<number>(10);
+  const [index, setIndex] = useState<number>(0);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const r = await fetch("/api/banners", { cache: "no-store" });
+        if (r.ok) {
+          const data = await r.json();
+          const arr: BannerItem[] = Array.isArray(data)
+            ? data
+            : Array.isArray(data?.items)
+            ? data.items
+            : [];
+          const iv = Number(data?.interval_seconds ?? 10);
+          if (!cancelled) {
+            setItems(arr.filter((b) => b && (b.enabled ?? true)));
+            setIntervalSec(Number.isFinite(iv) && iv > 0 ? iv : 10);
+          }
+          return;
+        }
+      } catch {}
+
+      // Fallback localStorage para permitir uso imediato sem backend pronto
+      try {
+        const ls = typeof window !== "undefined" ? localStorage.getItem("home_banners") : null;
+        const parsed = ls ? JSON.parse(ls) : [];
+        const ivls = typeof window !== "undefined" ? Number(localStorage.getItem("home_banners_interval") || 10) : 10;
+        if (!cancelled) {
+          setItems(Array.isArray(parsed) ? parsed.filter((b: BannerItem) => b && (b.enabled ?? true)) : []);
+          setIntervalSec(Number.isFinite(ivls) && ivls > 0 ? ivls : 10);
+        }
+      } catch {}
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (items.length > 1) {
+      timerRef.current = window.setInterval(() => {
+        setIndex((i) => (i + 1) % items.length);
+      }, intervalSec * 1000) as unknown as number;
+    }
+    return () => {
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [items.length, intervalSec]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (items.length === 0) return;
+      if (e.key === "ArrowRight") setIndex((i) => (i + 1) % items.length);
+      if (e.key === "ArrowLeft") setIndex((i) => (i - 1 + items.length) % items.length);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [items.length]);
+
+  const goPrev = () => setIndex((i) => (i - 1 + items.length) % items.length);
+  const goNext = () => setIndex((i) => (i + 1) % items.length);
+
+  if (!items.length) return null;
+
+  const current = items[index];
+  const src = getImageUrl(current?.image_url);
+
   return (
-    <section className="bg-primary/10">
-      <div className="mx-auto max-w-6xl px-4 py-10">
-        <div className="grid items-center gap-6 sm:grid-cols-2">
-          <div>
-            <h2 className="text-2xl font-semibold">
-              Outubro está recheado de promoções!
-            </h2>
-            <p className="mt-2 text-sm text-[#3F5F4F]/80">
-              Nas compras acima de R$350 com produto infantil, ganhe um brinde!
-            </p>
-            <a
-              className="mt-4 inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium"
-              href="#produtos"
-            >
-              Ver ofertas
-            </a>
+    <section className="w-full bg-primary/10">
+      <div className="w-full px-0">
+        <div className="relative overflow-hidden">
+          {/* Slides */}
+          <div className="relative h-[55vh] sm:h-[65vh] md:h-[75vh] lg:h-[85vh]">
+            {items.map((it, i) => {
+              const img = getImageUrl(it.image_url);
+              const active = i === index;
+              const href = it.link_url || "#";
+              return (
+                <a
+                  key={img + i}
+                  href={href}
+                  className={`absolute inset-0 block transition-opacity duration-700 ease-out ${active ? "opacity-100" : "opacity-0"}`}
+                >
+                  {img ? (
+                    <img
+                      src={img}
+                      alt={"banner"}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-muted text-sm text-[#3F5F4F]/70">
+                      Banner sem imagem
+                    </div>
+                  )}
+                </a>
+              );
+            })}
           </div>
-          <div className="h-40 rounded-lg bg-gradient-to-br from-primary/60 to-primary/20 sm:h-52" />
+
+          {/* Controles */}
+          <button
+            aria-label="Anterior"
+            onClick={goPrev}
+            className="group absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/20 p-2 text-white backdrop-blur transition-colors hover:bg-black/40"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            aria-label="Próximo"
+            onClick={goNext}
+            className="group absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/20 p-2 text-white backdrop-blur transition-colors hover:bg-black/40"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+
+          {/* Dots */}
+          <div className="pointer-events-none absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-2">
+            {items.map((_, i) => (
+              <span
+                key={i}
+                className={`pointer-events-auto h-2 w-2 rounded-full transition-all ${i === index ? "bg-white" : "bg-white/60"}`}
+                onClick={() => setIndex(i)}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </section>
@@ -765,6 +792,7 @@ function CartModal({ items, setItems, startStep, onClose, onOpenCadastro, sessio
   const [card, setCard] = useState({ nome: "", numero: "", validade: "", cvv: "" });
   const [boletoCpf, setBoletoCpf] = useState<string>("");
   const [orderConfirmed, setOrderConfirmed] = useState<boolean>(false);
+  const [orderNumber, setOrderNumber] = useState<string | null>(null);
 
   // Validações de fluxo por etapa (dinamiza e impede avançar sem concluir a atual)
   function isCartValid() { return !!loggedIn && items.length > 0; }
@@ -842,6 +870,8 @@ function CartModal({ items, setItems, startStep, onClose, onOpenCadastro, sessio
     const res = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const d = await res.json().catch(() => ({}));
     if (res.ok) {
+      const num = (d?.order_number ?? d?.order?.order_number ?? d?.order?.orderNumber ?? d?.orderNumber) ?? null;
+      if (num) setOrderNumber(String(num));
       setOrderConfirmed(true);
       // Limpar carrinho e atualizar lista de pedidos
       try {
@@ -864,17 +894,17 @@ function CartModal({ items, setItems, startStep, onClose, onOpenCadastro, sessio
 
   return (
     <Modal open={true} onClose={onClose}>
-      <div className="mx-auto max-w-2xl">
+      <div className="mx-auto max-w-2xl text-[15px] md:text-base leading-relaxed">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-[#3F5F4F]">Checkout</h2>
+          <h2 className="text-2xl md:text-3xl font-semibold text-[#3F5F4F]">Checkout</h2>
           <div className="flex items-center gap-2 text-[#3F5F4F]">
             <Heart size={18} />
-            <span className="text-xs">Um toque de carinho para você</span>
+            <span className="text-sm md:text-base">Um toque de carinho para você</span>
           </div>
         </div>
         {/* Indicador de progresso */}
         <div className="mt-4">
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex items-center gap-2 text-sm md:text-base">
             {steps.map((label, idx) => (
               <div key={label} className="flex items-center gap-2">
                 <button
@@ -1173,12 +1203,12 @@ function CartModal({ items, setItems, startStep, onClose, onOpenCadastro, sessio
                 <div className="space-y-4">
                   {!orderConfirmed ? (
                     <>
-                      <div className="rounded border bg-rose-50 p-3 text-sm">
-                        <div className="font-semibold">Resumo do pedido</div>
+                      <div className="rounded border bg-rose-50 p-4 text-base">
+                        <div className="text-lg font-semibold">Resumo do pedido</div>
                         <div className="mt-2 space-y-2">
                           <div>
-                            <div className="text-xs font-medium">Itens</div>
-                            <ul className="mt-1 space-y-1 text-xs text-zinc-700">
+                            <div className="text-base font-medium">Itens</div>
+                            <ul className="mt-1 space-y-1 text-base text-zinc-700">
                               {items.map((it) => (
                                 <li key={it.productId} className="flex justify-between">
                                   <span>{it.title} × {it.qty}</span>
@@ -1188,8 +1218,8 @@ function CartModal({ items, setItems, startStep, onClose, onOpenCadastro, sessio
                             </ul>
                           </div>
                           <div>
-                            <div className="text-xs font-medium">Endereço</div>
-                            <p className="text-xs text-zinc-700">
+                            <div className="text-base font-medium">Endereço</div>
+                            <p className="text-base text-zinc-700">
                               {(() => {
                                 const sel = addresses.find((a: any) => a.id === selectedAddressId) || address;
                                 const cep = "cep" in sel ? sel.cep : sel?.cep;
@@ -1203,29 +1233,31 @@ function CartModal({ items, setItems, startStep, onClose, onOpenCadastro, sessio
                             </p>
                           </div>
                           <div className="flex items-center justify-between">
-                            <div className="text-xs font-medium">Frete ({shippingMethod.label}, {shippingMethod.eta})</div>
-                            <div className="text-xs">{currencyBRL(shippingMethod.price)}</div>
+                            <div className="text-base font-medium">Frete ({shippingMethod.label}, {shippingMethod.eta})</div>
+                            <div className="text-base">{currencyBRL(shippingMethod.price)}</div>
                           </div>
                           <div className="flex items-center justify-between">
-                            <div className="text-xs font-medium">Pagamento</div>
-                            <div className="text-xs capitalize">{paymentMethod}</div>
+                            <div className="text-base font-medium">Pagamento</div>
+                            <div className="text-base capitalize">{paymentMethod}</div>
                           </div>
                           <div className="flex items-center justify-between">
-                            <div className="text-sm font-semibold">Total</div>
-                            <div className="text-sm font-semibold text-rose-900">{currencyBRL(total + shippingMethod.price)}</div>
+                            <div className="text-base font-semibold">Total</div>
+                            <div className="text-base font-semibold text-rose-900">{currencyBRL(total + shippingMethod.price)}</div>
                           </div>
                         </div>
                       </div>
-                      {error && <p className="text-xs text-red-600">{error}</p>}
+                      {error && <p className="text-sm text-red-600">{error}</p>}
                       <div className="flex justify-between">
-                        <button onClick={() => setStep(4)} className="text-xs hover:text-primary">Voltar para pagamento</button>
+                        <button onClick={() => setStep(4)} className="text-base hover:text-primary">Voltar para pagamento</button>
                         <Button className="bg-[#C9DAC7] text-[#3F5F4F] hover:bg-[#BFD5C8] transition-colors" onClick={finalizeOrder}>Confirmar pedido</Button>
                       </div>
                     </>
                   ) : (
-                    <div className="space-y-4">
-                      <div className="rounded border bg-green-50 p-3 text-sm text-green-700">
-                        <span>Pedido confirmado! Em instantes enviaremos instruções de pagamento.</span>
+                    <div className="space-y-5">
+                      <div className="rounded border bg-green-50 p-6 text-[#3F5F4F]">
+                        <div className="text-2xl md:text-3xl font-semibold">Pedido confirmado!</div>
+                        <div className="mt-2 text-lg md:text-xl">Número do pedido: <span className="font-bold">{orderNumber ?? "—"}</span></div>
+                        <div className="mt-2 text-base md:text-lg">Em instantes enviaremos as instruções de pagamento.</div>
                       </div>
                       <div className="flex justify-end">
                         <Button className="bg-[#C9DAC7] text-[#3F5F4F] hover:bg-[#BFD5C8] transition-colors" onClick={onClose}>Fechar</Button>
@@ -1258,6 +1290,7 @@ function CadastroModal({ onClose, onOpenLogin }: { onClose: () => void; onOpenLo
     cidade: string;
     estado: string;
     cpf: string;
+    dataNascimento?: string;
   };
 
   function onlyDigits(s: string): string {
@@ -1308,6 +1341,36 @@ function CadastroModal({ onClose, onOpenLogin }: { onClose: () => void; onOpenLo
     return d2 === parseInt(cpf[10]);
   }
 
+  function formatDateBR(s: string): string {
+    const d = onlyDigits(s).slice(0, 8);
+    const p1 = d.slice(0, 2);
+    const p2 = d.slice(2, 4);
+    const p3 = d.slice(4, 8);
+    let out = p1;
+    if (p2) out += `/${p2}`;
+    if (p3) out += `/${p3}`;
+    return out;
+  }
+  function isValidDateBR(s?: string): boolean {
+    if (!s) return false;
+    const m = String(s).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return false;
+    const dd = Number(m[1]);
+    const mm = Number(m[2]);
+    const yyyy = Number(m[3]);
+    if (yyyy < 1900 || yyyy > 2100) return false;
+    if (mm < 1 || mm > 12) return false;
+    const days = new Date(yyyy, mm, 0).getDate();
+    return dd >= 1 && dd <= days;
+  }
+  function toISOFromBRDate(s?: string): string | undefined {
+    if (!s) return undefined;
+    const m = String(s).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return undefined;
+    const [_, dd, mm, yyyy] = m;
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
   const schema = z.object({
     nome: z.string().min(2, "Informe seu nome"),
     sobrenome: z.string().min(2, "Informe seu sobrenome"),
@@ -1325,6 +1388,10 @@ function CadastroModal({ onClose, onOpenLogin }: { onClose: () => void; onOpenLo
     cidade: z.string().min(2, "Cidade é obrigatória"),
     estado: z.string().transform((v) => v.toUpperCase()).refine((v) => /^[A-Z]{2}$/.test(v), "UF deve ter 2 letras"),
     cpf: z.string().refine(isValidCPF, "CPF inválido"),
+    dataNascimento: z
+      .string()
+      .optional()
+      .refine((v) => !v || isValidDateBR(v), "Informe uma data válida"),
   }).refine((data) => data.senha === data.confirmSenha, {
     path: ["confirmSenha"],
     message: "As senhas não coincidem",
@@ -1351,6 +1418,7 @@ function CadastroModal({ onClose, onOpenLogin }: { onClose: () => void; onOpenLo
       cidade: "",
       estado: "",
       cpf: "",
+      dataNascimento: "",
     },
   });
 
@@ -1358,10 +1426,12 @@ function CadastroModal({ onClose, onOpenLogin }: { onClose: () => void; onOpenLo
   const cepVal = watch("cep");
   const cpfVal = watch("cpf");
   const telVal = watch("telefone");
+  const dobVal = watch("dataNascimento");
 
   useEffect(() => { setValue("cep", formatCEP(cepVal || ""), { shouldValidate: false }); }, [cepVal]);
   useEffect(() => { setValue("cpf", formatCPF(cpfVal || ""), { shouldValidate: false }); }, [cpfVal]);
   useEffect(() => { setValue("telefone", formatPhone(telVal || ""), { shouldValidate: false }); }, [telVal]);
+  useEffect(() => { setValue("dataNascimento", formatDateBR(dobVal || ""), { shouldValidate: false }); }, [dobVal]);
 
   async function lookupCEP() {
     const digits = onlyDigits(cepVal || "");
@@ -1400,6 +1470,7 @@ function CadastroModal({ onClose, onOpenLogin }: { onClose: () => void; onOpenLo
       cpf: onlyDigits(values.cpf),
       telefone: onlyDigits(values.telefone || ""),
       estado: values.estado.toUpperCase(),
+      data_nascimento: toISOFromBRDate(values.dataNascimento) || undefined,
     };
     const res = await fetch("/api/auth/register", {
       method: "POST",
@@ -1418,56 +1489,56 @@ function CadastroModal({ onClose, onOpenLogin }: { onClose: () => void; onOpenLo
 
   return (
     <Modal open={true} onClose={onClose}>
-      <div className="mx-auto max-w-2xl">
-        <h2 className="text-lg font-semibold">Cadastro de Cliente</h2>
-        <p className="text-xs text-[#3F5F4F]/70">Preencha primeiro o CEP para auto-completar o endereço.</p>
+      <div className="mx-auto max-w-2xl text-[15px] md:text-base leading-relaxed">
+        <h2 className="text-2xl md:text-3xl font-semibold text-[#3F5F4F]">Cadastro de Cliente</h2>
+        <p className="text-sm md:text-base text-[#3F5F4F]/70">Preencha primeiro o CEP para auto-completar o endereço.</p>
         <form onSubmit={handleSubmit(onSubmit)} className="mt-4 grid gap-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
             <div>
-              <label className="mb-1 block text-sm text-[#3F5F4F]">Nome</label>
+              <label className="mb-1 block text-base text-[#3F5F4F]">Nome</label>
               <Input {...register("nome")} placeholder="Seu nome" />
-              {errors.nome && <p className="mt-1 text-xs text-red-600">{errors.nome.message}</p>}
+              {errors.nome && <p className="mt-1 text-sm text-red-600">{errors.nome.message}</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm text-[#3F5F4F]">Sobrenome</label>
+              <label className="mb-1 block text-base text-[#3F5F4F]">Sobrenome</label>
               <Input {...register("sobrenome")} placeholder="Seu sobrenome" />
-              {errors.sobrenome && <p className="mt-1 text-xs text-red-600">{errors.sobrenome.message}</p>}
+              {errors.sobrenome && <p className="mt-1 text-sm text-red-600">{errors.sobrenome.message}</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm text-[#3F5F4F]">Email</label>
+              <label className="mb-1 block text-base text-[#3F5F4F]">Email</label>
               <Input type="email" {...register("email")} placeholder="voce@exemplo.com" />
-              {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>}
+              {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm text-[#3F5F4F]">Senha</label>
+              <label className="mb-1 block text-base text-[#3F5F4F]">Senha</label>
               <Input type="password" {...register("senha")} placeholder="••••••••" />
-              {errors.senha && <p className="mt-1 text-xs text-red-600">{errors.senha.message}</p>}
+              {errors.senha && <p className="mt-1 text-sm text-red-600">{errors.senha.message}</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm text-[#3F5F4F]">Confirmar senha</label>
+              <label className="mb-1 block text-base text-[#3F5F4F]">Confirmar senha</label>
               <Input type="password" {...register("confirmSenha")} placeholder="••••••••" />
-              {errors.confirmSenha && <p className="mt-1 text-xs text-red-600">{errors.confirmSenha.message}</p>}
+              {errors.confirmSenha && <p className="mt-1 text-sm text-red-600">{errors.confirmSenha.message}</p>}
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <div>
-              <label className="mb-1 block text-sm text-[#3F5F4F]">Telefone</label>
+              <label className="mb-1 block text-base text-[#3F5F4F]">Telefone</label>
               <Input {...register("telefone")} placeholder="(99) 99999-9999" />
-              {errors.telefone && <p className="mt-1 text-xs text-red-600">{errors.telefone.message}</p>}
+              {errors.telefone && <p className="mt-1 text-sm text-red-600">{errors.telefone.message}</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm text-[#3F5F4F]">CEP</label>
+              <label className="mb-1 block text-base text-[#3F5F4F]">CEP</label>
               <Input {...register("cep")} placeholder="00000-000" onBlur={lookupCEP} />
-              {cepLoading && <p className="mt-1 text-xs text-[#3F5F4F]/70">Buscando endereço...</p>}
+              {cepLoading && <p className="mt-1 text-sm text-[#3F5F4F]/70">Buscando endereço...</p>}
               {(errors.cep || cepError) && (
-                <p className="mt-1 text-xs text-red-600">{errors.cep?.message || cepError}</p>
+                <p className="mt-1 text-sm text-red-600">{errors.cep?.message || cepError}</p>
               )}
             </div>
             <div>
-              <label className="mb-1 block text-sm text-[#3F5F4F]">Endereço</label>
+              <label className="mb-1 block text-base text-[#3F5F4F]">Endereço</label>
               <Input {...register("endereco")} placeholder="Rua Exemplo" />
-              {errors.endereco && <p className="mt-1 text-xs text-red-600">{errors.endereco.message}</p>}
+              {errors.endereco && <p className="mt-1 text-sm text-red-600">{errors.endereco.message}</p>}
             </div>
             <div>
               <label className="mb-1 block text-sm text-[#3F5F4F]">Número</label>
@@ -1505,11 +1576,16 @@ function CadastroModal({ onClose, onOpenLogin }: { onClose: () => void; onOpenLo
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm text-[#3F5F4F]">CPF</label>
               <Input {...register("cpf")} placeholder="000.000.000-00" />
               {errors.cpf && <p className="mt-1 text-xs text-red-600">{errors.cpf.message}</p>}
+            </div>
+            <div>
+              <label className="mb-1 block text-sm text-[#3F5F4F]">Data de nascimento</label>
+              <Input {...register("dataNascimento")} placeholder="dd/mm/aaaa" />
+              {errors.dataNascimento && <p className="mt-1 text-xs text-red-600">{errors.dataNascimento.message}</p>}
             </div>
           </div>
 

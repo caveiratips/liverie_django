@@ -96,6 +96,7 @@ class CustomerProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile')
     telefone = models.CharField(max_length=20, blank=True, default='')
     cpf = models.CharField(max_length=14, blank=True, default='')
+    data_nascimento = models.DateField(null=True, blank=True)
     cep = models.CharField(max_length=9, blank=True, default='')
     endereco = models.CharField(max_length=180, blank=True, default='')
     numero = models.CharField(max_length=10, blank=True, default='')
