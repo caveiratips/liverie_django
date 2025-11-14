@@ -4,9 +4,41 @@ from .models import Category, Product, ProductImage, SiteSetting, CustomerProfil
 
 
 class CategorySerializer(serializers.ModelSerializer):
+    parent = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), required=False, allow_null=True)
+    parent_id = serializers.PrimaryKeyRelatedField(source="parent", queryset=Category.objects.all(), write_only=True, required=False, allow_null=True)
+    sort_order = serializers.IntegerField(required=False)
+    group_title = serializers.CharField(required=False, allow_blank=True)
+    image_url = serializers.SerializerMethodField()
+    children = serializers.SerializerMethodField()
+
     class Meta:
         model = Category
-        fields = ["id", "name", "slug", "created_at"]
+        fields = ["id", "name", "slug", "parent", "parent_id", "sort_order", "group_title", "image", "image_url", "children", "created_at"]
+
+    def get_image_url(self, obj):
+        try:
+            if obj.image:
+                return obj.image.url
+        except Exception:
+            pass
+        return None
+
+    def get_children(self, obj):
+        try:
+            qs = obj.children.all().order_by("sort_order", "name")
+            return [
+                {
+                    "id": c.id,
+                    "name": c.name,
+                    "slug": c.slug,
+                    "sort_order": getattr(c, "sort_order", 0),
+                    "group_title": getattr(c, "group_title", "") or "",
+                    "image_url": (c.image.url if c.image else None),
+                }
+                for c in qs
+            ]
+        except Exception:
+            return []
 
 
 class ProductSerializer(serializers.ModelSerializer):

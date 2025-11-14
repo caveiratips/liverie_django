@@ -1,6 +1,7 @@
 from rest_framework import generics, viewsets, status
 from django.db.models import Q
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from django.db.models.deletion import ProtectedError
 from django.core.files.storage import default_storage
 import uuid
 import os
@@ -53,6 +54,24 @@ class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     permission_classes = [IsStaffOrReadOnly]
+    # Accept multipart for image uploads and JSON for regular updates
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            self.perform_destroy(instance)
+        except ProtectedError as e:
+            protected = getattr(e, 'protected_objects', [])
+            count = len(protected) if protected is not None else 0
+            return Response(
+                {
+                    "detail": "Categoria não pode ser deletada porque existem produtos vinculados.",
+                    "protected_count": count,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ProductViewSet(viewsets.ModelViewSet):

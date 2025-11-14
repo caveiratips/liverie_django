@@ -9,17 +9,29 @@ import string
 class Category(models.Model):
     name = models.CharField(max_length=120)
     slug = models.SlugField(max_length=140, unique=True, blank=True)
+    parent = models.ForeignKey('self', null=True, blank=True, related_name='children', on_delete=models.CASCADE)
+    image = models.ImageField(upload_to='categories/', null=True, blank=True)
+    sort_order = models.IntegerField(default=0)
+    # Grupo opcional para subcategorias (usado no mega menu)
+    group_title = models.CharField(max_length=60, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["name"]
+        ordering = ["sort_order", "name"]
 
     def __str__(self):
         return self.name
 
     def save(self, *args, **kwargs):
         if not self.slug:
-            self.slug = slugify(self.name)
+            base = slugify(self.name or "") or "categoria"
+            candidate = base
+            suffix = 2
+            # Garantir unicidade do slug
+            while Category.objects.filter(slug=candidate).exclude(pk=self.pk).exists():
+                candidate = f"{base}-{suffix}"
+                suffix += 1
+            self.slug = candidate
         super().save(*args, **kwargs)
 
 

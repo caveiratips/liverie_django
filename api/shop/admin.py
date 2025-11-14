@@ -4,8 +4,10 @@ from .models import Category, Product, CustomerProfile, CustomerAddress, Order, 
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ("name", "slug", "created_at")
+    list_display = ("name", "slug", "parent", "sort_order", "created_at")
     search_fields = ("name", "slug")
+    list_filter = ("parent",)
+    list_editable = ("sort_order",)
 
 
 @admin.register(Product)
