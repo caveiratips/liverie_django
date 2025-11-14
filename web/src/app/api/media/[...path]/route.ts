@@ -1,17 +1,16 @@
-import { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
-const BASE = process.env.API_BASE_URL || "http://localhost:8000";
+const BASE = process.env.API_BASE_URL ? `${process.env.API_BASE_URL}` : "http://localhost:8000";
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+export async function GET(_: Request, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
-  const target = `${BASE}/media/${path.join('/')}`;
-  const res = await fetch(target, { method: "GET" });
-  const contentType = res.headers.get("content-type") || "application/octet-stream";
-  return new Response(res.body, {
-    status: res.status,
-    headers: {
-      "Content-Type": contentType,
-      "Cache-Control": "public, max-age=3600",
-    },
-  });
+  const joined = Array.isArray(path) ? path.join("/") : "";
+  const url = `${BASE}/media/${joined}`;
+  const res = await fetch(url, { cache: "no-store" });
+  const buf = await res.arrayBuffer();
+  const headers = new Headers(res.headers);
+  // Ensure content-type is propagated
+  const ct = res.headers.get("content-type") || "application/octet-stream";
+  headers.set("content-type", ct);
+  return new NextResponse(buf, { status: res.status, headers });
 }

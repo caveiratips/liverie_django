@@ -20,6 +20,7 @@ import {
   Images,
   FileText,
   Search,
+  CheckCircle,
 } from "lucide-react";
 
 function LoginForm({ onLoggedIn }: { onLoggedIn: () => void }) {
@@ -264,63 +265,410 @@ function BannersAdmin() {
 }
 
 function CategoriesAdmin() {
-  const [items, setItems] = useState<any[]>([]);
+  type Cat = { id: number; name: string; slug: string; parent: number | null; sort_order?: number; group_title?: string | null; image_url?: string | null; children?: Cat[] };
+  const [items, setItems] = useState<Cat[]>([]);
   const [name, setName] = useState("");
+  const [orderMain, setOrderMain] = useState<number>(0);
+  const [file, setFile] = useState<File | null>(null);
+  const fileMainInputRef = useRef<HTMLInputElement | null>(null);
+  const [filePreviewMain, setFilePreviewMain] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<Record<number, { name: string; file: File | null; sort_order?: number; group_title?: string | null; previewUrl?: string | null }>>({});
+
+  function getImageUrl(u: string | null | undefined): string | undefined {
+    if (!u) return undefined;
+    if (u.startsWith("http://") || u.startsWith("https://")) return u;
+    if (u.startsWith("/media/")) return `/api/media${u.replace('/media', '')}`;
+    return u;
+  }
+
+  // Definições de grupos de subcategorias por faixas de sort_order
+  // Mantém compatível com o agrupamento do Header (MENU mega)
+  const GROUP_DEFS: Array<{ title: string; min: number; max: number }> = [
+    { title: 'MODELOS', min: 0, max: 99 },
+    { title: 'ESTILO', min: 100, max: 199 },
+    { title: 'CARACTERÍSTICAS', min: 200, max: 299 },
+    { title: 'CONHEÇA A COLEÇÃO', min: 300, max: 399 },
+  ];
+
+  function groupTitleFromOrder(order?: number): string | null {
+    const so = Number(order ?? 0);
+    const g = GROUP_DEFS.find((r) => so >= r.min && so <= r.max);
+    return g ? g.title : null;
+  }
+
+  function minOrderForGroup(title: string): number {
+    const g = GROUP_DEFS.find((r) => r.title === title);
+    return g ? g.min : 0;
+  }
 
   async function load() {
     const res = await fetch("/api/admin/categories", { cache: "no-store" });
     if (res.ok) {
       const data = await res.json();
-      setItems(data);
+      setItems(Array.isArray(data) ? data : []);
     }
   }
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
-  async function createCategory() {
+  async function createCategory(parentId?: number) {
     setError(null);
-    const res = await fetch("/api/admin/categories", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    if (res.ok) {
-      setName("");
-      load();
-    } else {
-      const data = await res.json().catch(() => ({}));
-      setError(data?.detail || "Erro ao criar categoria");
+    setSaving(true);
+    try {
+      let res: Response;
+      const isSub = !!parentId;
+      const targetName = isSub ? (editing[-(parentId as number)]?.name || "") : name;
+      const targetOrder = isSub ? (editing[-(parentId as number)]?.sort_order ?? 0) : orderMain;
+      const targetGroup = isSub ? (editing[-(parentId as number)]?.group_title ?? "") : undefined;
+      if (!isSub && file) {
+        const fd = new FormData();
+        fd.set("name", targetName);
+        fd.set("image", file);
+        fd.set("sort_order", String(targetOrder ?? 0));
+        res = await fetch("/api/admin/categories", { method: "POST", body: fd });
+      } else {
+        res = await fetch("/api/admin/categories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: targetName, parent_id: parentId ?? null, sort_order: targetOrder ?? 0, group_title: targetGroup }),
+        });
+      }
+      if (res.ok) {
+        if (isSub && parentId) {
+          const next = { ...editing }; delete next[-parentId]; setEditing(next);
+        } else {
+          setName("");
+          setOrderMain(0);
+          setFile(null);
+          if (filePreviewMain) { try { URL.revokeObjectURL(filePreviewMain); } catch {} }
+          setFilePreviewMain(null);
+        }
+        setMsg(isSub ? "Subcategoria adicionada com sucesso." : "Categoria criada com sucesso.");
+        setTimeout(() => setMsg(null), 3000);
+        await load();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        const verbose = typeof data === "object" && data && !("detail" in data)
+          ? Object.values(data).flat().join("; ")
+          : data?.detail;
+        setError(verbose || "Erro ao criar categoria");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveEdit(id: number) {
+    const st = editing[id];
+    if (!st) return;
+    setSaving(true);
+    setError(null);
+    try {
+      let res: Response;
+      if (st.file) {
+        const fd = new FormData();
+        fd.set("name", st.name);
+        fd.set("image", st.file);
+        if (typeof st.sort_order === "number") {
+          fd.set("sort_order", String(st.sort_order));
+        }
+        res = await fetch(`/api/admin/categories/${id}`, { method: "PATCH", body: fd });
+      } else {
+        res = await fetch(`/api/admin/categories/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: st.name, sort_order: st.sort_order }),
+        });
+      }
+      if (res.ok) {
+        const prev = editing[id]?.previewUrl;
+        if (prev) { try { URL.revokeObjectURL(prev); } catch {} }
+        const next = { ...editing }; delete next[id]; setEditing(next);
+        setMsg("Categoria atualizada com sucesso.");
+        setTimeout(() => setMsg(null), 3000);
+        await load();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data?.detail || "Erro ao salvar categoria");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteCategory(id: number) {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/categories/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        await load();
+        setMsg("Categoria removida com sucesso.");
+        setTimeout(() => setMsg(null), 3000);
+      } else {
+        let msg = "Erro ao remover categoria";
+        try { const data = await res.json(); msg = data?.detail || msg; } catch {}
+        setError(msg);
+      }
+    } finally { setSaving(false); }
+  }
+
+  async function updateOrder(id: number, order: number) {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/categories/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sort_order: order }),
+      });
+      if (res.ok) {
+        await load();
+        setMsg("Ordem atualizada.");
+        setTimeout(() => setMsg(null), 3000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data?.detail || "Erro ao atualizar ordem");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateGroupTitle(id: number, title: string) {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/categories/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ group_title: title }),
+      });
+      if (res.ok) {
+        await load();
+        setMsg("Grupo atualizado.");
+        setTimeout(() => setMsg(null), 3000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data?.detail || "Erro ao atualizar grupo");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Helpers para separar pais e filhos
+  const parents = items.filter((c) => !c.parent);
+  const childrenByParent: Record<number, Cat[]> = {};
+  for (const c of items) {
+    if (c.parent) {
+      childrenByParent[c.parent] = childrenByParent[c.parent] || [];
+      childrenByParent[c.parent].push(c);
     }
   }
 
   return (
     <Card className="p-4">
       <h3 className="mb-3 text-lg font-semibold">Categorias</h3>
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
         <Input
-          className="flex-1"
+          className="w-full"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Nova categoria"
+          placeholder="Nova categoria principal"
         />
-        <Button className="bg-primary text-black" onClick={createCategory}>Criar</Button>
+        <Input
+          className="w-24"
+          type="number"
+          min={0}
+          value={Number.isFinite(orderMain) ? orderMain : 0}
+          onChange={(e) => setOrderMain(Number(e.target.value || 0))}
+          placeholder="Ordem"
+        />
+        <div className="flex items-center gap-2">
+          <Button variant="outline" className="border-zinc-300" type="button" onClick={() => fileMainInputRef.current?.click()}>
+            <Images className="mr-2 h-4 w-4" />Adicionar foto
+          </Button>
+          {file && <span className="max-w-[160px] truncate text-xs text-zinc-600">{file.name}</span>}
+          <input
+            ref={fileMainInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0] || null;
+              if (filePreviewMain) { try { URL.revokeObjectURL(filePreviewMain); } catch {} }
+              setFile(f);
+              setFilePreviewMain(f ? URL.createObjectURL(f) : null);
+            }}
+          />
+          {filePreviewMain && (
+            <div className="h-10 w-16 overflow-hidden rounded border bg-muted">
+              <img src={filePreviewMain} alt="preview" className="h-full w-full object-cover" />
+            </div>
+          )}
+        </div>
+        <Button className="bg-primary text-black" disabled={saving || !name.trim()} onClick={() => createCategory()}>Criar</Button>
       </div>
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+      {msg && (
+        <div className="mb-3 flex items-center gap-2 text-sm text-green-700">
+          <CheckCircle className="h-4 w-4" />
+          <span>{msg}</span>
+        </div>
+      )}
+
       <ul className="divide-y">
-        {items.map((c) => (
-          <li key={c.id} className="py-2">
-            <span className="font-medium">{c.name}</span>
-            <span className="ml-2 text-xs text-zinc-500">/{c.slug}</span>
+        {parents.map((p) => (
+          <li key={p.id} className="py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
+                {editing[p.id] ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={editing[p.id].name}
+                      onChange={(e) => setEditing({ ...editing, [p.id]: { ...editing[p.id], name: e.target.value } })}
+                    />
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" className="border-zinc-300" type="button" onClick={() => (document.getElementById(`file-cat-${p.id}`) as HTMLInputElement | null)?.click()}>
+                        <Images className="mr-2 h-4 w-4" />Adicionar foto
+                      </Button>
+                      <input
+                        id={`file-cat-${p.id}`}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] || null;
+                          const prev = editing[p.id]?.previewUrl || null;
+                          if (prev) { try { URL.revokeObjectURL(prev); } catch {} }
+                          const url = f ? URL.createObjectURL(f) : null;
+                          setEditing({ ...editing, [p.id]: { ...editing[p.id], file: f, previewUrl: url } });
+                        }}
+                      />
+                      {(editing[p.id]?.previewUrl || p.image_url) && (
+                        <div className="h-10 w-16 overflow-hidden rounded border bg-muted">
+                          <img
+                            src={editing[p.id]?.previewUrl || getImageUrl(p.image_url || null) || undefined}
+                            alt="preview"
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <Input
+                      className="w-24"
+                      type="number"
+                      min={0}
+                      value={editing[p.id].sort_order ?? (p.sort_order ?? 0)}
+                      onChange={(e) => setEditing({ ...editing, [p.id]: { ...editing[p.id], sort_order: Number(e.target.value || 0) } })}
+                      placeholder="Ordem"
+                    />
+                    <Button className="bg-primary text-black" disabled={saving} onClick={() => saveEdit(p.id)}>Salvar</Button>
+                    <Button variant="secondary" disabled={saving} onClick={() => { const next = { ...editing }; delete next[p.id]; setEditing(next); }}>Cancelar</Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700">Categoria</span>
+                    <span className="font-medium">{p.name}</span>
+                    <span className="text-xs text-zinc-500">/{p.slug}</span>
+                    {p.image_url && (
+                      <img src={getImageUrl(p.image_url)} alt="Imagem da categoria" className="ml-2 h-12 w-20 object-cover rounded border" />
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Input
+                        className="w-20"
+                        type="number"
+                        min={0}
+                        value={p.sort_order ?? 0}
+                        onChange={(e) => updateOrder(p.id, Number(e.target.value || 0))}
+                      />
+                      <span className="text-xs text-zinc-500">Ordem</span>
+                    </div>
+                    <Button variant="secondary" onClick={() => setEditing({ ...editing, [p.id]: { name: p.name, file: null, sort_order: p.sort_order ?? 0 } })}>Editar</Button>
+                    <Button variant="destructive" onClick={() => deleteCategory(p.id)}>Excluir</Button>
+                  </div>
+                )}
+
+                {/* Subcategorias */}
+                <div className="mt-3 ml-4">
+                  <h4 className="text-sm text-zinc-600">Subcategorias</h4>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Input placeholder="Nova subcategoria" value={(editing[-p.id]?.name || "")}
+                      onChange={(e) => setEditing({ ...editing, [-p.id]: { name: e.target.value, file: null, sort_order: editing[-p.id]?.sort_order ?? 0, group_title: editing[-p.id]?.group_title ?? '' } })} />
+                    {/* Grupo livre (texto) para subcategoria */}
+                    <Input
+                      className="w-40"
+                      placeholder="Grupo (opcional)"
+                      value={editing[-p.id]?.group_title ?? ''}
+                      onChange={(e) => setEditing({ ...editing, [-p.id]: { name: editing[-p.id]?.name || '', file: null, sort_order: editing[-p.id]?.sort_order ?? 0, group_title: e.target.value } })}
+                    />
+                    <Input
+                      className="w-24"
+                      type="number"
+                      min={0}
+                      value={editing[-p.id]?.sort_order ?? 0}
+                      onChange={(e) => setEditing({ ...editing, [-p.id]: { name: editing[-p.id]?.name || "", file: null, sort_order: Number(e.target.value || 0) } })}
+                      placeholder="Ordem"
+                    />
+                    <Button className="bg-primary text-black" disabled={saving || !(editing[-p.id]?.name || "").trim()} onClick={() => createCategory(p.id)}>Adicionar</Button>
+                  </div>
+                  <ul className="mt-2 flex flex-wrap gap-2">
+                    {(childrenByParent[p.id] || []).map((c) => (
+                      <li key={c.id} className="flex items-center gap-2 rounded border px-2 py-1">
+                        <span className="inline-flex items-center rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700">Subcategoria</span>
+                        <span>{c.name}</span>
+                        {/* Indicativo do grupo atual */}
+                        <span className="ml-1 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700">
+                          {(c.group_title && c.group_title.trim()) || groupTitleFromOrder(c.sort_order) || 'Sem grupo'}
+                        </span>
+                        <div className="ml-2 flex items-center gap-1">
+                          <Input
+                            className="w-16"
+                            type="number"
+                            min={0}
+                            value={c.sort_order ?? 0}
+                            onChange={(e) => updateOrder(c.id, Number(e.target.value || 0))}
+                          />
+                          <span className="text-[10px] text-zinc-500">Ordem</span>
+                        </div>
+                        {/* Editar grupo livre */}
+                        <div className="ml-2 flex items-center gap-1">
+                          <Input
+                            className="w-32"
+                            placeholder="Grupo"
+                            value={editing[c.id]?.group_title ?? c.group_title ?? ''}
+                            onChange={(e) => setEditing({ ...editing, [c.id]: { name: (editing[c.id]?.name ?? c.name), file: null, sort_order: (editing[c.id]?.sort_order ?? c.sort_order ?? 0), group_title: e.target.value } })}
+                          />
+                          <button
+                            className="rounded border px-1.5 py-1 text-[12px] text-blue-600"
+                            onClick={() => updateGroupTitle(c.id, editing[c.id]?.group_title ?? c.group_title ?? '')}
+                          >Salvar</button>
+                          <span className="text-[10px] text-zinc-500">Grupo</span>
+                        </div>
+                        <button className="text-xs text-blue-600" onClick={() => setEditing({ ...editing, [c.id]: { name: c.name, file: null, sort_order: c.sort_order ?? 0 } })}>Editar</button>
+                        <button className="text-xs text-red-600" onClick={() => deleteCategory(c.id)}>Excluir</button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
           </li>
         ))}
+        {parents.length === 0 && (
+          <li className="py-8 text-center text-sm text-zinc-600">Nenhuma categoria cadastrada</li>
+        )}
       </ul>
     </Card>
   );
 }
 
 function ProductsAdmin() {
+  const router = useRouter();
+  const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
@@ -348,6 +696,8 @@ function ProductsAdmin() {
   const [isActive, setIsActive] = useState(true);
   const [categoryId, setCategoryId] = useState("");
   const [categoryName, setCategoryName] = useState("");
+  const [parentCatId, setParentCatId] = useState<string>("");
+  const [subCatId, setSubCatId] = useState<string>("");
   const [categories, setCategories] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<string[]>([]);
@@ -538,7 +888,7 @@ function ProductsAdmin() {
     setFormErrors([]);
     const errs: string[] = [];
     if (!title.trim()) errs.push("Título é obrigatório");
-    const hasCategoryInput = Boolean(categoryName.trim()) || Boolean(categoryId);
+    const hasCategoryInput = Boolean(subCatId) || Boolean(parentCatId) || Boolean(categoryName.trim()) || Boolean(categoryId);
     if (!hasCategoryInput) errs.push("Categoria é obrigatória");
     const priceNum = toFloatBR(price);
     if (Number.isNaN(priceNum)) errs.push("Preço deve ser um número válido");
@@ -567,7 +917,11 @@ function ProductsAdmin() {
     if (errs.length) { setFormErrors(errs); return; }
     // Garantir category_id válido: se o nome digitado não estiver cadastrado, cria antes de salvar
     async function ensureCategoryId(): Promise<number> {
-      // Se já temos um id válido, usa
+      // Prioriza subcategoria selecionada; senão, categoria principal; senão, id direto; por fim, nome digitado (cria se necessário)
+      const subIdNum = Number(subCatId);
+      if (subIdNum && !Number.isNaN(subIdNum)) return subIdNum;
+      const parentIdNum = Number(parentCatId);
+      if (parentIdNum && !Number.isNaN(parentIdNum)) return parentIdNum;
       const existingId = Number(categoryId);
       if (existingId && !Number.isNaN(existingId)) return existingId;
       const name = categoryName.trim();
@@ -575,7 +929,7 @@ function ProductsAdmin() {
       // Tenta localizar por nome
       const found = categories.find((c) => (c?.name || "").toLowerCase() === name.toLowerCase());
       if (found?.id) return Number(found.id);
-      // Cria categoria
+      // Cria categoria principal (sem subcategoria) se necessário
       const resCat = await fetch("/api/admin/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -673,6 +1027,8 @@ function ProductsAdmin() {
       setCategoryId("");
       setEditingId(null);
       setCategoryName("");
+      setParentCatId("");
+      setSubCatId("");
       // Limpar previews e arquivos
       imagePreviews.forEach((u) => URL.revokeObjectURL(u));
       setImageFiles([]);
@@ -745,6 +1101,21 @@ function ProductsAdmin() {
     setIsActive(Boolean(p.is_active));
     setCategoryId(p.category?.id != null ? String(p.category.id) : "");
     setCategoryName(p.category?.name || "");
+    // Seleção de categoria/subcategoria
+    const catId = p.category?.id;
+    const catParent = p.category?.parent ?? null;
+    if (catId != null) {
+      if (catParent != null) {
+        setParentCatId(String(catParent));
+        setSubCatId(String(catId));
+      } else {
+        setParentCatId(String(catId));
+        setSubCatId("");
+      }
+    } else {
+      setParentCatId("");
+      setSubCatId("");
+    }
     const imgs: Array<{ id: number; url: string | null; alt_text: string; is_primary: boolean }> = Array.isArray(p.images) ? p.images : [];
     setExistingImages(imgs);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -764,8 +1135,16 @@ function ProductsAdmin() {
 
   return (
     <Card className="p-4">
-      <h3 className="mb-3 text-lg font-semibold">Produtos</h3>
-      <div className="grid grid-cols-1 gap-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Produtos</h3>
+        <div className="flex items-center gap-2">
+          <Button className="bg-primary text-black" onClick={() => router.push('/gerenciamento/produtos/novo')}>Cadastrar Produto</Button>
+          <Button variant="outline" onClick={() => setShowForm((v) => !v)}>
+            {showForm ? 'Ocultar formulário' : 'Editar aqui'}
+          </Button>
+        </div>
+      </div>
+      <div className={clsx("grid grid-cols-1 gap-4", !showForm && "hidden")}>
         {formErrors.length > 0 && (
           <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">
             <ul className="list-disc pl-4">
@@ -777,19 +1156,51 @@ function ProductsAdmin() {
         )}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input placeholder="Título" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <div className="flex flex-col">
-            <Input list="categoriesList" placeholder="Categoria" value={categoryName} onChange={(e) => {
+          {/* Seleção de categoria/subcategoria */}
+          <div className="grid grid-cols-1 gap-2">
+            <div>
+              <label className="mb-1 block text-sm">Categoria</label>
+              <select
+                className="w-full rounded-md border px-3 py-2 text-sm"
+                value={parentCatId}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setParentCatId(v);
+                  // Resetar subcategoria ao trocar categoria
+                  setSubCatId("");
+                }}
+              >
+                <option value="">Selecione uma categoria</option>
+                {(categories || []).filter((c) => !c.parent).sort((a, b) => String(a.name).localeCompare(String(b.name))).map((c) => (
+                  <option key={c.id} value={String(c.id)}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm">Subcategoria</label>
+              <select
+                className="w-full rounded-md border px-3 py-2 text-sm"
+                value={subCatId}
+                onChange={(e) => setSubCatId(e.target.value)}
+                disabled={!parentCatId}
+              >
+                <option value="">{parentCatId ? "Selecione uma subcategoria (opcional)" : "Escolha a categoria primeiro"}</option>
+                {(() => {
+                  const parent = (categories || []).find((c) => String(c.id) === String(parentCatId));
+                  const children = parent?.children || [];
+                  return children.sort((a: any, b: any) => String(a.name).localeCompare(String(b.name))).map((sc: any) => (
+                    <option key={sc.id} value={String(sc.id)}>{sc.name}</option>
+                  ));
+                })()}
+              </select>
+            </div>
+            <small className="mt-1 text-xs text-zinc-500">Se preferir, você pode digitar um nome de categoria abaixo; criaremos caso não exista.</small>
+            <Input placeholder="ou digite o nome da categoria" value={categoryName} onChange={(e) => {
               const val = e.target.value;
               setCategoryName(val);
               const match = categories.find((c) => (c?.name || "").toLowerCase() === val.toLowerCase());
               setCategoryId(match?.id != null ? String(match.id) : "");
             }} />
-            <datalist id="categoriesList">
-              {categories.map((c) => (
-                <option key={c.id} value={c.name} />
-              ))}
-            </datalist>
-            <small className="mt-1 text-xs text-zinc-500">Digite para sugerir. Se não existir, criaremos a categoria ao salvar.</small>
           </div>
           <Input type="text" inputMode="numeric" placeholder="Preço (R$)" value={price} onChange={(e) => setPrice(formatCurrencyInput(e.target.value))} />
           <Input type="text" inputMode="numeric" placeholder="Preço comparativo (de)" value={compareAtPrice} onChange={(e) => setCompareAtPrice(formatCurrencyInput(e.target.value))} />
@@ -887,7 +1298,7 @@ function ProductsAdmin() {
           <Input placeholder="SEO Título" value={seoTitle} onChange={(e) => setSeoTitle(e.target.value)} />
           <Input placeholder="SEO Descrição" value={seoDescription} onChange={(e) => setSeoDescription(e.target.value)} />
         </div>
-        <div className="mt-3">
+        <div className={clsx("mt-3", !showForm && "hidden")}>
           <label className="mb-2 block text-sm font-medium">Imagens do produto</label>
 
           {existingImages.length > 0 && (
@@ -1058,8 +1469,8 @@ function ProductsAdmin() {
           </div>
         </div>
       </div>
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-      <div className="mt-4 flex items-center gap-2">
+      {showForm && error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      <div className={clsx("mt-4 flex items-center gap-2", !showForm && "hidden")}>
         <Button className="bg-primary text-black" onClick={saveProduct}>{editingId ? "Atualizar Produto" : "Salvar Produto"}</Button>
         {editingId && (
           <Button variant="outline" onClick={() => { setEditingId(null); setFormErrors([]); setError(null); }}>Cancelar edição</Button>
@@ -1076,6 +1487,7 @@ function ProductsAdmin() {
               <thead>
                 <tr className="border-b">
                   <th className="p-2 text-left">Título</th>
+                  <th className="p-2 text-left">Categoria</th>
                   <th className="p-2 text-left">Preço</th>
                   <th className="p-2 text-left">Estoque</th>
                   <th className="p-2 text-left">Disponível</th>
@@ -1087,13 +1499,15 @@ function ProductsAdmin() {
                 {products.map((p) => (
                   <tr key={p.id} className="border-b">
                     <td className="p-2">{p.title}</td>
+                    <td className="p-2">{p.category?.name || '—'}</td>
                     <td className="p-2">R$ {Number(p.price).toFixed(2)}</td>
                     <td className="p-2">{p.stock_quantity}</td>
                     <td className="p-2">{p.available_for_sale ? "Sim" : "Não"}</td>
                     <td className="p-2">{p.free_shipping ? "Grátis" : "—"}</td>
                     <td className="p-2">
                       <div className="flex gap-2">
-                        <Button variant="outline" onClick={() => startEdit(p)}>Editar</Button>
+                        <Button variant="outline" onClick={() => startEdit(p)}>Editar aqui</Button>
+                        <Button variant="outline" onClick={() => router.push(`/loja/produto/${p.slug}`)}>Ver na loja</Button>
                         <Button variant="destructive" onClick={() => deleteProduct(p.id)}>Excluir</Button>
                       </div>
                     </td>
