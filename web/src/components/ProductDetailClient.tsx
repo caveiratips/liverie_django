@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ShoppingBag } from "lucide-react";
 
 type ProductImage = { url?: string | null; alt_text?: string | null; is_primary?: boolean };
 type Product = {
@@ -175,18 +176,19 @@ export default function ProductDetailClient({ product }: { product: Product }) {
         </div>
         <a href="#guia-medidas" className="text-sm underline">Guia de medidas</a>
       </div>
-      <div className="flex gap-2">
-        <button
-          onClick={() => { addToCartLocal(qty); /* permanece na página para continuar comprando */ }}
-          className="flex-1 rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary"
-        >
-          Adicionar à sacola
-        </button>
+      <div className="flex flex-col gap-2">
         <button
           onClick={() => { addToCartLocal(1); window.location.href = "/loja?buyNow=1"; }}
-          className="flex-1 rounded-md px-3 py-2 text-sm font-semibold bg-[#C9DAC7] text-[#3F5F4F] hover:bg-[#BFD5C8] transition-colors"
+          className="w-full rounded-md px-3 py-3 text-sm font-semibold bg-[#3F5F4F] text-white hover:bg-[#2F5243] transition-colors inline-flex items-center justify-center gap-2"
         >
+          <ShoppingBag size={18} />
           Comprar agora
+        </button>
+        <button
+          onClick={() => { addToCartLocal(qty); }}
+          className="w-full rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary"
+        >
+          Adicionar à sacola
         </button>
       </div>
     </div>
